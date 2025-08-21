@@ -13,9 +13,20 @@ import { supabase } from '@/lib/supabase-kda'
 export const runtime = 'nodejs'
 
 type FamiliaToGuildMap = Record<string, 'Manifest' | 'Allyance' | 'Grand_Order'>
+type NickToFamiliaMap = Record<string, string>
 
 function normalizeFamilia(name: string): string {
   return (name || '').toString().trim().toLowerCase()
+}
+
+function normalizeNick(name: string): string {
+  return (name || '').toString().trim().toLowerCase()
+}
+
+function isMockFamilia(name: string): boolean {
+  const n = (name || '').toString().trim()
+  if (!n || n.toLowerCase().includes('não encontrada')) return true
+  return /^família\d+$/i.test(n) || /^familia\d+$/i.test(n)
 }
 
 async function getAllianceFamilyMap(baseUrl: string): Promise<FamiliaToGuildMap> {
@@ -42,6 +53,132 @@ async function getAllianceFamilyMap(baseUrl: string): Promise<FamiliaToGuildMap>
     console.warn('Não foi possível obter cache da aliança, mapeamento vazio.', e)
     return {}
   }
+}
+
+function getBaseUrl(): string {
+  const envUrl = process.env.NEXT_PUBLIC_BASE_URL || ''
+  if (envUrl) return envUrl
+  const vercelHost = process.env.VERCEL_URL || ''
+  if (vercelHost) return `https://${vercelHost}`
+  return 'http://localhost:3000'
+}
+
+async function fetchFamiliaByNick(nick: string): Promise<string> {
+  try {
+    const url = `https://www.sa.playblackdesert.com/pt-BR/Adventure?checkSearchText=True&searchType=1&searchKeyword=${encodeURIComponent(nick)}`
+    const res = await fetch(url, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+      },
+      cache: 'no-store'
+    })
+    const html = await res.text()
+    const match = html.match(/Profile\?profileTarget=[^>]*>([^<]+)<\/a>/i)
+    const familia = match?.[1]?.trim() || ''
+    return familia
+  } catch {
+    return ''
+  }
+}
+
+async function getNickToFamiliaMap(baseUrl: string, targetNicks?: string[]): Promise<NickToFamiliaMap> {
+  try {
+    // Se temos uma lista limitada de nicks alvo, prefere buscar direto por nick (mais rápido/menos chamadas)
+    if (targetNicks && targetNicks.length > 0) {
+      const unique = Array.from(new Set(targetNicks.map(normalizeNick)))
+      const map: NickToFamiliaMap = {}
+      const CONCURRENCY = 6
+      let index = 0
+      async function worker() {
+        while (index < unique.length) {
+          const i = index++
+          const nick = unique[i]
+          const familia = await fetchFamiliaByNick(nick)
+          if (familia) map[nick] = normalizeFamilia(familia)
+        }
+      }
+      const workers = Array.from({ length: Math.min(CONCURRENCY, unique.length) }, () => worker())
+      // Limite global de tempo
+      await Promise.race([
+        Promise.all(workers),
+        new Promise<void>((resolve) => setTimeout(() => resolve(), 12000))
+      ])
+      return map
+    }
+
+    // Obtém membros da aliança
+    let res = await fetch(`${baseUrl}/api/alliance-cache`, { cache: 'no-store' })
+    let data = await res.json()
+    if (!data?.members || data.members.length === 0) {
+      const postRes = await fetch(`${baseUrl}/api/alliance-cache`, { method: 'POST' })
+      data = await postRes.json()
+    }
+
+    const familiasAll: string[] = Array.isArray(data?.members)
+      ? data.members.map((m: any) => m.familia).filter(Boolean)
+      : []
+
+    if (familiasAll.length === 0) return {}
+
+    const map: NickToFamiliaMap = {}
+
+    // Se houver lista alvo de nicks, fazemos busca incremental e paramos cedo quando cobrir todos
+    const targetSet = new Set<string>((targetNicks || []).map(normalizeNick))
+    const needTarget = targetSet.size > 0
+
+    const familiasCapped = familiasAll.slice(0, 180)
+    const CHUNK = 60
+    let requests = 0
+
+    for (let i = 0; i < familiasCapped.length; i += CHUNK) {
+      const familias = familiasCapped.slice(i, i + CHUNK)
+      // Define timeout manual para não travar o processamento
+      const controller = new AbortController()
+      const timeout = setTimeout(() => controller.abort(), 12000)
+      const famRes = await fetch(`${baseUrl}/api/family-tracking`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ familias }),
+        signal: controller.signal
+      })
+      clearTimeout(timeout)
+      requests++
+      if (!famRes.ok) continue
+      const famData = await famRes.json()
+      if (famData?.success && Array.isArray(famData.data)) {
+        for (const fam of famData.data) {
+          const familia = normalizeFamilia(fam.familia)
+          for (const ch of fam.classes || []) {
+            const nick = normalizeNick(ch.nick)
+            if (nick && familia) {
+              map[nick] = familia
+              if (needTarget) targetSet.delete(nick)
+            }
+          }
+        }
+      }
+      // Para cedo se já cobrimos todos os nicks alvo ou se atingimos um limite razoável de requests
+      if ((needTarget && targetSet.size === 0) || requests >= 4) break
+    }
+
+    return map
+  } catch (e) {
+    console.warn('Não foi possível obter mapa de nick→família.', e)
+    return {}
+  }
+}
+function collectTargetNicksFromLogs(logs: any[]): string[] {
+  const set = new Set<string>()
+  for (const log of logs) {
+    const byGuild = log?.player_stats_by_guild || log?.playerStatsByGuild
+    if (!byGuild) continue
+    const lollipopPlayers = byGuild['Lollipop'] || {}
+    for (const [nick, stats] of Object.entries(lollipopPlayers)) {
+      const rawFamilia = (stats as any).familia || ''
+      if (isMockFamilia(rawFamilia)) set.add(normalizeNick(nick))
+    }
+  }
+  return Array.from(set)
 }
 
 // Interface para estatísticas por classe
@@ -86,7 +223,11 @@ function isAlliancePlayer(playerNick: string, guildData: any): { isAlliance: boo
 }
 
 // Função para processar um log e extrair estatísticas individuais
-function processLogForMonthlyKDA(logData: any, familiaToGuild: FamiliaToGuildMap = {} as FamiliaToGuildMap): Map<string, MonthlyKDARecord> {
+function processLogForMonthlyKDA(
+  logData: any,
+  familiaToGuild: FamiliaToGuildMap = {} as FamiliaToGuildMap,
+  nickToFamilia: NickToFamiliaMap = {} as NickToFamiliaMap
+): Map<string, MonthlyKDARecord> {
   const playerStats = new Map<string, MonthlyKDARecord>()
   const currentMonth = new Date(logData.created_at).toISOString().slice(0, 7)
   
@@ -154,8 +295,13 @@ function processLogForMonthlyKDA(logData: any, familiaToGuild: FamiliaToGuildMap
       // Se vier como Lollipop, redistribui pela guilda real usando o mapa de famílias
       if (guildName === 'Lollipop') {
         for (const [nick, stats] of Object.entries(playersByNick as any)) {
-          const familia = (stats as any).familia || ''
-          const mappedGuild = familiaToGuild[normalizeFamilia(familia)]
+          const rawFamilia = (stats as any).familia || ''
+          let familiaNorm = normalizeFamilia(rawFamilia)
+          if (!familiaNorm || isMockFamilia(rawFamilia)) {
+            const byNick = nickToFamilia[normalizeNick(nick)]
+            if (byNick) familiaNorm = byNick
+          }
+          const mappedGuild = familiaToGuild[familiaNorm]
           if (!mappedGuild) {
             // Sem correspondência -> ignora (não pertence à aliança rastreada)
             continue
@@ -168,7 +314,7 @@ function processLogForMonthlyKDA(logData: any, familiaToGuild: FamiliaToGuildMap
               updated_at: '',
               month_year: currentMonth,
               player_nick: playerKey,
-              player_familia: familia,
+              player_familia: familiaNorm,
               guilda: mappedGuild,
               classes_played: [],
               total_kills: 0,
@@ -300,9 +446,11 @@ export async function GET(request: NextRequest) {
     // Mapa de família -> guilda usando cache atual
     const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || ''
     const familiaToGuild = await getAllianceFamilyMap(baseUrl)
+    const targetNicks = collectTargetNicksFromLogs(logs)
+    const nickToFamilia = await getNickToFamiliaMap(baseUrl, targetNicks)
 
     for (const log of logs) {
-      const logPlayerStats = processLogForMonthlyKDA(log, familiaToGuild)
+      const logPlayerStats = processLogForMonthlyKDA(log, familiaToGuild, nickToFamilia)
       
       // Merge stats
       for (const [playerNick, stats] of logPlayerStats) {
@@ -419,8 +567,10 @@ export async function POST(request: NextRequest) {
         // Cria set de jogadores ativos da aliança
         const activeAlliancePlayers = new Set<string>()
         
+        const targetNicks = collectTargetNicksFromLogs(logs)
+        const nickToFamilia = await getNickToFamiliaMap(baseUrl, targetNicks)
         for (const log of logs) {
-          const logPlayerStats = processLogForMonthlyKDA(log, familiaToGuild)
+          const logPlayerStats = processLogForMonthlyKDA(log, familiaToGuild, nickToFamilia)
           for (const [playerNick] of logPlayerStats) {
             activeAlliancePlayers.add(playerNick)
           }

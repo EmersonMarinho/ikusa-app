@@ -88,7 +88,7 @@ async function getMultipleFamiliesData(familias: string[]): Promise<Array<{
   }> = [];
 
   // Processa em lotes para não sobrecarregar
-  const BATCH_SIZE = 3;
+  const BATCH_SIZE = 8;
   
   for (let i = 0; i < familias.length; i += BATCH_SIZE) {
     const batch = familias.slice(i, i + BATCH_SIZE);
@@ -120,10 +120,7 @@ async function getMultipleFamiliesData(familias: string[]): Promise<Array<{
     const batchResults = await Promise.all(batchPromises);
     results.push(...batchResults);
     
-    // Delay entre lotes
-    if (i + BATCH_SIZE < familias.length) {
-      await new Promise(resolve => setTimeout(resolve, 2000));
-    }
+    // Sem delay entre lotes para reduzir latência
   }
 
   return results;
