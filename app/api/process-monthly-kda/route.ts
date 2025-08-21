@@ -444,7 +444,7 @@ export async function GET(request: NextRequest) {
     const allPlayerStats = new Map<string, MonthlyKDARecord>()
     
     // Mapa de família -> guilda usando cache atual
-    const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || ''
+    const baseUrl = getBaseUrl()
     const familiaToGuild = await getAllianceFamilyMap(baseUrl)
     const targetNicks = collectTargetNicksFromLogs(logs)
     const nickToFamilia = await getNickToFamiliaMap(baseUrl, targetNicks)
@@ -555,7 +555,7 @@ export async function POST(request: NextRequest) {
     let removedInactivePlayers = 0
 
     // Prepara mapa família -> guilda (uma vez) para redistribuir Lollipop
-    const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || ''
+    const baseUrl = getBaseUrl()
     const familiaToGuild = await getAllianceFamilyMap(baseUrl)
     
     // Se for reprocessamento completo, limpa jogadores inativos
