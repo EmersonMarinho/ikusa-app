@@ -626,9 +626,36 @@ export function HistoryPage() {
                       <h3 className="text-lg font-semibold text-neutral-100">Total por Classe</h3>
                       <div className="space-y-3">
                         {(processedData.total_por_classe || processedData.totalPorClasse).map(({ classe, count }: any) => {
-                          const players = selectedGuildView === "all" || !processedData.classes_by_guild
+                          const playersBase = selectedGuildView === "all" || !processedData.classes_by_guild
                             ? (processedData.classes || {})[classe] || []
                             : (processedData.classes_by_guild || {})[selectedGuildView]?.[classe] || []
+
+                          // Enriquecer players com K/D do dia, se disponível
+                          const players = playersBase.map((p: any) => {
+                            const statsGuild = processedData.playerStatsByGuild || processedData.player_stats_by_guild || {}
+                            let kdInfo: { kills?: number; deaths?: number } = {}
+                            let killsVsChernobyl: number | undefined
+                            if (selectedGuildView === 'all') {
+                              for (const [guildName, byNick] of Object.entries(statsGuild as any)) {
+                                if ((byNick as any)[p.nick]) {
+                                  kdInfo = { kills: (byNick as any)[p.nick].kills, deaths: (byNick as any)[p.nick].deaths }
+                                  if (typeof (byNick as any)[p.nick].kills_vs_chernobyl === 'number') {
+                                    killsVsChernobyl = (byNick as any)[p.nick].kills_vs_chernobyl
+                                  }
+                                  break
+                                }
+                              }
+                            } else {
+                              const byNick = (statsGuild as any)[selectedGuildView] || {}
+                              if (byNick[p.nick]) {
+                                kdInfo = { kills: byNick[p.nick].kills, deaths: byNick[p.nick].deaths }
+                                if (typeof byNick[p.nick].kills_vs_chernobyl === 'number') {
+                                  killsVsChernobyl = byNick[p.nick].kills_vs_chernobyl
+                                }
+                              }
+                            }
+                            return { nick: p.nick, familia: p.familia, killsVsChernobyl, ...kdInfo }
+                          })
 
                           return (
                             <CollapsibleClassItem

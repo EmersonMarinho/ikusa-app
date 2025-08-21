@@ -6,7 +6,7 @@ import { Badge } from "@/components/ui/badge"
 interface CollapsibleClassItemProps {
   classe: string
   count: number
-  players: Array<{ nick: string; familia: string }>
+  players: Array<{ nick: string; familia: string; kills?: number; deaths?: number; killsVsChernobyl?: number }>
   total: number
   variant?: "default" | "compact"
 }
@@ -68,8 +68,34 @@ export function CollapsibleClassItem({
                 key={index}
                 className="text-sm text-neutral-300 bg-neutral-700 rounded p-2 hover:bg-neutral-600 transition-colors duration-150"
               >
-                <span className="font-medium">{player.nick}</span>
-                <span className="text-neutral-500 ml-2">({player.familia})</span>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <span className="font-medium">{player.nick}</span>
+                    <span className="text-neutral-500 ml-2">({player.familia})</span>
+                  </div>
+                  {(typeof player.kills === 'number' || typeof player.deaths === 'number') && (
+                    <div className="text-xs text-neutral-200 flex items-center gap-2">
+                      <span className="text-green-300">K: {player.kills ?? 0}</span>
+                      <span className="text-red-300">D: {player.deaths ?? 0}</span>
+                      <span className={`font-semibold ${
+                        (player.deaths ?? 0) > 0
+                          ? ((player.kills ?? 0) / (player.deaths ?? 1)) >= 1
+                            ? 'text-green-300'
+                            : 'text-red-300'
+                          : (player.kills ?? 0) > 0
+                            ? 'text-green-300'
+                            : 'text-neutral-300'
+                      }`}>
+                        K/D: { (player.deaths ?? 0) > 0
+                          ? ((player.kills ?? 0) / (player.deaths ?? 1)).toFixed(2)
+                          : (player.kills ?? 0) > 0 ? '∞' : '0.00' }
+                      </span>
+                      {typeof player.killsVsChernobyl === 'number' && (
+                        <span className="text-xs text-purple-300">Chern: {player.killsVsChernobyl}</span>
+                      )}
+                    </div>
+                  )}
+                </div>
               </div>
             ))}
           </div>
