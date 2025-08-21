@@ -11,6 +11,12 @@ const PUBLIC_PATHS = [
 export function middleware(request: NextRequest) {
 	const { pathname } = request.nextUrl
 
+	// Se a autenticação não estiver configurada, não bloqueia páginas (ex.: Vercel sem envs)
+	const sessionConfigured = !!process.env.IKUSA_PASSWORD && !!process.env.IKUSA_SESSION_TOKEN
+	if (!sessionConfigured) {
+		return NextResponse.next()
+	}
+
 	// Permite assets e rotas públicas
 	if (
 		pathname.startsWith('/_next') ||
