@@ -87,30 +87,45 @@ async function getNickToFamiliaMap(baseUrl: string, targetNicks?: string[]): Pro
     if (targetNicks && targetNicks.length > 0) {
       const unique = Array.from(new Set(targetNicks.map(normalizeNick)))
       const map: NickToFamiliaMap = {}
-      const CONCURRENCY = 6
+      const CONCURRENCY = 3 // Reduzido para 3 na Vercel para evitar timeout
       let index = 0
+      
       async function worker() {
         while (index < unique.length) {
           const i = index++
           const nick = unique[i]
-          const familia = await fetchFamiliaByNick(nick)
-          if (familia) map[nick] = normalizeFamilia(familia)
+          try {
+            const familia = await fetchFamiliaByNick(nick)
+            if (familia) map[nick] = normalizeFamilia(familia)
+          } catch (error) {
+            console.warn(`Erro ao buscar família para ${nick}:`, error)
+          }
         }
       }
+      
       const workers = Array.from({ length: Math.min(CONCURRENCY, unique.length) }, () => worker())
-      // Limite global de tempo
+      
+      // Limite global de tempo reduzido para Vercel
       await Promise.race([
         Promise.all(workers),
-        new Promise<void>((resolve) => setTimeout(() => resolve(), 12000))
+        new Promise<void>((resolve) => setTimeout(() => resolve(), 8000)) // 8 segundos máximo
       ])
+      
+      console.log(`🎯 Busca direta por nick: ${Object.keys(map).length}/${unique.length} mapeados`)
       return map
     }
 
     // Obtém membros da aliança
-    let res = await fetch(`${baseUrl}/api/alliance-cache`, { cache: 'no-store' })
+    let res = await fetch(`${baseUrl}/api/alliance-cache`, { 
+      cache: 'no-store',
+      headers: { 'Cache-Control': 'no-cache' }
+    })
     let data = await res.json()
     if (!data?.members || data.members.length === 0) {
-      const postRes = await fetch(`${baseUrl}/api/alliance-cache`, { method: 'POST' })
+      const postRes = await fetch(`${baseUrl}/api/alliance-cache`, { 
+        method: 'POST',
+        headers: { 'Cache-Control': 'no-cache' }
+      })
       data = await postRes.json()
     }
 
@@ -118,7 +133,10 @@ async function getNickToFamiliaMap(baseUrl: string, targetNicks?: string[]): Pro
       ? data.members.map((m: any) => m.familia).filter(Boolean)
       : []
 
-    if (familiasAll.length === 0) return {}
+    if (familiasAll.length === 0) {
+      console.warn('⚠️ Nenhuma família encontrada na aliança')
+      return {}
+    }
 
     const map: NickToFamiliaMap = {}
 
@@ -126,41 +144,68 @@ async function getNickToFamiliaMap(baseUrl: string, targetNicks?: string[]): Pro
     const targetSet = new Set<string>((targetNicks || []).map(normalizeNick))
     const needTarget = targetSet.size > 0
 
-    const familiasCapped = familiasAll.slice(0, 180)
-    const CHUNK = 60
+    // Reduzido para evitar timeout na Vercel
+    const familiasCapped = familiasAll.slice(0, 120) // Máximo 120 famílias
+    const CHUNK = 40 // Chunk menor
     let requests = 0
 
     for (let i = 0; i < familiasCapped.length; i += CHUNK) {
       const familias = familiasCapped.slice(i, i + CHUNK)
+      
       // Define timeout manual para não travar o processamento
       const controller = new AbortController()
-      const timeout = setTimeout(() => controller.abort(), 12000)
-      const famRes = await fetch(`${baseUrl}/api/family-tracking`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ familias }),
-        signal: controller.signal
-      })
-      clearTimeout(timeout)
-      requests++
-      if (!famRes.ok) continue
-      const famData = await famRes.json()
-      if (famData?.success && Array.isArray(famData.data)) {
-        for (const fam of famData.data) {
-          const familia = normalizeFamilia(fam.familia)
-          for (const ch of fam.classes || []) {
-            const nick = normalizeNick(ch.nick)
-            if (nick && familia) {
-              map[nick] = familia
-              if (needTarget) targetSet.delete(nick)
+      const timeout = setTimeout(() => controller.abort(), 10000) // 10 segundos máximo
+      
+      try {
+        const famRes = await fetch(`${baseUrl}/api/family-tracking`, {
+          method: 'POST',
+          headers: { 
+            'Content-Type': 'application/json',
+            'Cache-Control': 'no-cache'
+          },
+          body: JSON.stringify({ familias }),
+          signal: controller.signal
+        })
+        
+        clearTimeout(timeout)
+        requests++
+        
+        if (!famRes.ok) {
+          console.warn(`⚠️ Erro na requisição ${requests}: ${famRes.status}`)
+          continue
+        }
+        
+        const famData = await famRes.json()
+        if (famData?.success && Array.isArray(famData.data)) {
+          for (const fam of famData.data) {
+            const familia = normalizeFamilia(fam.familia)
+            for (const ch of fam.classes || []) {
+              const nick = normalizeNick(ch.nick)
+              if (nick && familia) {
+                map[nick] = familia
+                if (needTarget) targetSet.delete(nick)
+              }
             }
           }
         }
+        
+        // Para cedo se já cobrimos todos os nicks alvo ou se atingimos um limite razoável de requests
+        if ((needTarget && targetSet.size === 0) || requests >= 3) {
+          console.log(`🛑 Parando busca após ${requests} requests (${Object.keys(map).length} nicks mapeados)`)
+          break
+        }
+        
+        // Delay entre requests para não sobrecarregar
+        await new Promise(resolve => setTimeout(resolve, 1000))
+        
+      } catch (error) {
+        clearTimeout(timeout)
+        console.warn(`⚠️ Erro na requisição ${requests}:`, error)
+        continue
       }
-      // Para cedo se já cobrimos todos os nicks alvo ou se atingimos um limite razoável de requests
-      if ((needTarget && targetSet.size === 0) || requests >= 4) break
     }
 
+    console.log(`🔗 Busca por família: ${Object.keys(map).length} nicks mapeados em ${requests} requests`)
     return map
   } catch (e) {
     console.warn('Não foi possível obter mapa de nick→família.', e)
@@ -437,17 +482,38 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url)
     const monthYear = searchParams.get('month') || new Date().toISOString().slice(0, 7)
     
+    console.log(`🔍 Buscando KDA mensal para: ${monthYear}`)
+    
     // Busca logs do mês especificado
     const logs = await getAllianceLogsByMonth(monthYear)
+    console.log(`📊 Encontrados ${logs.length} logs para ${monthYear}`)
+    
+    if (logs.length === 0) {
+      return NextResponse.json({
+        success: false,
+        message: `Nenhum log encontrado para o mês ${monthYear}`,
+        month_year: monthYear,
+        total_players: 0,
+        total_logs_processed: 0,
+        players: []
+      })
+    }
     
     // Processa todos os logs do mês
     const allPlayerStats = new Map<string, MonthlyKDARecord>()
     
     // Mapa de família -> guilda usando cache atual
     const baseUrl = getBaseUrl()
+    console.log(`🌐 Base URL: ${baseUrl}`)
+    
     const familiaToGuild = await getAllianceFamilyMap(baseUrl)
+    console.log(`👥 Mapa família->guilda: ${Object.keys(familiaToGuild).length} famílias mapeadas`)
+    
     const targetNicks = collectTargetNicksFromLogs(logs)
+    console.log(`🎯 Nicks alvo para busca: ${targetNicks.length}`)
+    
     const nickToFamilia = await getNickToFamiliaMap(baseUrl, targetNicks)
+    console.log(`🔗 Mapa nick->família: ${Object.keys(nickToFamilia).length} nicks mapeados`)
 
     for (const log of logs) {
       const logPlayerStats = processLogForMonthlyKDA(log, familiaToGuild, nickToFamilia)
@@ -507,14 +573,17 @@ export async function GET(request: NextRequest) {
         ? playerStats.total_kills_vs_others / playerStats.total_deaths_vs_others 
         : playerStats.total_kills_vs_others
     }
-    
-    return NextResponse.json({
+
+    const result = {
       success: true,
       month_year: monthYear,
       total_players: allPlayerStats.size,
       total_logs_processed: logs.length,
       players: Array.from(allPlayerStats.values()).sort((a, b) => b.total_kills - a.total_kills)
-    })
+    }
+    
+    console.log(`✅ KDA mensal processado: ${result.total_players} jogadores`)
+    return NextResponse.json(result)
     
   } catch (error) {
     console.error('Erro ao buscar estatísticas mensais:', error)

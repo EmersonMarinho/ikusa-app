@@ -82,6 +82,7 @@ export default function KDAMensalPage() {
   // Removido: input de log de combate manual
   const [isLoading, setIsLoading] = useState(false)
   const [lastUpdate, setLastUpdate] = useState<Date | null>(null)
+  const [error, setError] = useState<string | null>(null)
   
   // Filtros
   const [filters, setFilters] = useState({
@@ -153,17 +154,39 @@ export default function KDAMensalPage() {
     setIsLoading(true)
     
     try {
-      const response = await fetch(`/api/process-monthly-kda?month=${targetMonth}`)
+      // Força recarregamento sem cache na Vercel
+      const response = await fetch(`/api/process-monthly-kda?month=${targetMonth}`, {
+        cache: 'no-store',
+        headers: {
+          'Cache-Control': 'no-cache',
+          'Pragma': 'no-cache'
+        }
+      })
+      
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`)
+      }
+      
       const data = await response.json()
       
       if (data.success) {
         setMonthlyKDAData(data.players)
         setLastUpdate(new Date())
+        console.log(`✅ KDA mensal carregado: ${data.players.length} jogadores`)
       } else {
         console.error('Erro ao carregar KDA mensal:', data.message)
+        setMonthlyKDAData([])
+        // Mostra erro mais amigável
+        if (data.message?.includes('Nenhum log encontrado')) {
+          setError('Nenhum log encontrado para este mês. Processe alguns logs primeiro.')
+        } else {
+          setError(`Erro ao carregar dados: ${data.message}`)
+        }
       }
     } catch (error) {
       console.error('Erro ao carregar KDA mensal:', error)
+      setMonthlyKDAData([])
+      setError(`Erro de conexão: ${error instanceof Error ? error.message : 'Erro desconhecido'}`)
     } finally {
       setIsLoading(false)
     }
@@ -172,17 +195,25 @@ export default function KDAMensalPage() {
   // Processa logs mensais e salva no banco
   const processMonthlyKDA = async () => {
     setIsLoading(true)
+    setError(null) // Limpa erros anteriores
     
     try {
       const response = await fetch('/api/process-monthly-kda', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'Cache-Control': 'no-cache'
+        },
         body: JSON.stringify({ 
           monthYear: selectedMonth,
           forceReprocess: true,
           cleanInactivePlayers: true // Remove jogadores que não são mais da aliança
         })
       })
+      
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`)
+      }
       
       const data = await response.json()
       
@@ -192,13 +223,18 @@ export default function KDAMensalPage() {
           message += `\n🗑️ ${data.removed_inactive_players} jogadores inativos removidos`
         }
         alert(message)
-        await loadMonthlyKDAData() // Recarrega dados atualizados
+        
+        // Recarrega dados atualizados
+        await loadMonthlyKDAData()
       } else {
         alert(`❌ Erro: ${data.message}`)
+        setError(data.message)
       }
     } catch (error) {
       console.error('Erro ao processar KDA mensal:', error)
-      alert('❌ Erro ao processar KDA mensal')
+      const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido'
+      alert(`❌ Erro ao processar KDA mensal: ${errorMessage}`)
+      setError(errorMessage)
     } finally {
       setIsLoading(false)
     }
@@ -368,6 +404,9 @@ export default function KDAMensalPage() {
           <div className="text-sm text-neutral-400">
             Última atualização: {lastUpdate ? lastUpdate.toLocaleString('pt-BR') : 'Nunca'}
           </div>
+          {error && (
+            <div className="text-red-400 text-sm mt-2">{error}</div>
+          )}
         </CardContent>
       </Card>
 
