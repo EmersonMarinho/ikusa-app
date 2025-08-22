@@ -346,7 +346,7 @@ function processLogForMonthlyKDA(
             const byNick = nickToFamilia[normalizeNick(nick)]
             if (byNick) familiaNorm = byNick
           }
-          let mappedGuild = familiaToGuild[familiaNorm] as ('Manifest' | 'Allyance' | 'Grand_Order') | undefined
+          let mappedGuild: 'Manifest' | 'Allyance' | 'Grand_Order' | 'Lollipop' | undefined = familiaToGuild[familiaNorm] as any
           if (!mappedGuild) {
             // Tenta inferir pela presença nas classes_by_guild das guildas da aliança
             const allianceGuilds: Array<'Manifest' | 'Allyance' | 'Grand_Order'> = ['Manifest', 'Allyance', 'Grand_Order']
@@ -365,8 +365,8 @@ function processLogForMonthlyKDA(
             }
           }
           if (!mappedGuild) {
-            // Fallback temporário: classificar como Manifest para não perder o jogador
-            mappedGuild = 'Manifest'
+            // Fallback temporário: classificar como Lollipop para não perder o jogador
+            mappedGuild = 'Lollipop'
           }
           const playerKey = nick
           if (!playerStats.has(playerKey)) {
@@ -377,7 +377,7 @@ function processLogForMonthlyKDA(
               month_year: currentMonth,
               player_nick: playerKey,
               player_familia: familiaNorm,
-              guilda: mappedGuild,
+              guilda: mappedGuild as any,
               classes_played: [],
               total_kills: 0,
               total_deaths: 0,
@@ -615,7 +615,7 @@ export async function GET(request: NextRequest) {
 // POST: Processa logs e salva/atualiza KDA mensal
 export async function POST(request: NextRequest) {
   try {
-    const { forceReprocess = false, monthYear, cleanInactivePlayers = true } = await request.json()
+    const { forceReprocess = false, monthYear, cleanInactivePlayers = true, refreshAllianceCache = true } = await request.json()
     
     // Verifica/inicializa configuração do mês
     let config = await getCurrentMonthConfig()
@@ -642,6 +642,14 @@ export async function POST(request: NextRequest) {
 
     // Prepara mapa família -> guilda (uma vez) para redistribuir Lollipop
     const baseUrl = getBaseUrl()
+    // Opcionalmente, atualiza cache da aliança ANTES de mapear
+    if (refreshAllianceCache) {
+      try {
+        await fetch(`${baseUrl}/api/alliance-cache`, { method: 'POST', cache: 'no-store' })
+      } catch (e) {
+        console.warn('Não foi possível atualizar cache da aliança antes do processamento.', e)
+      }
+    }
     const familiaToGuild = await getAllianceFamilyMap(baseUrl)
     
     // Se for reprocessamento completo, limpa jogadores inativos
