@@ -69,12 +69,28 @@ export function HistoryPage() {
       try {
         setLoading(true)
         const data = await getRealHistory()
+        console.log('📊 Dados carregados do banco:', data)
+        console.log('📊 Estrutura dos dados:', data.map(d => ({
+          id: d.id,
+          guild: d.guild,
+          guilds: d.guilds,
+          total_geral: d.total_geral,
+          arquivo_nome: d.arquivo_nome,
+          created_at: d.created_at,
+          event_date: d.event_date,
+          // Adicionar mais campos para debug
+          territorio: d.territorio,
+          node: d.node,
+          kills_by_guild: d.kills_by_guild,
+          deaths_by_guild: d.deaths_by_guild
+        })))
         setHistoryData(data)
         setError(null)
       } catch (err) {
         console.error('Erro ao carregar histórico:', err)
         // Fallback para dados mock
         const mockData = getMockHistory()
+        console.log('📊 Usando dados mock:', mockData)
         setHistoryData(mockData)
         setError('Erro ao carregar dados do banco. Usando dados simulados.')
       } finally {
@@ -110,21 +126,80 @@ export function HistoryPage() {
 
   // Filter records based on selected guilds
   const filteredRecords = useMemo(() => {
-    if (selectedGuilds.length === 0) return historyData
-    return historyData.filter((record) => {
+    console.log('🔍 Filtrando registros. Total de registros:', historyData.length)
+    console.log('🔍 Guildas selecionadas:', selectedGuilds)
+    
+    if (selectedGuilds.length === 0) {
+      console.log('🔍 Sem filtro de guilda, retornando todos os registros')
+      return historyData
+    }
+    
+    const filtered = historyData.filter((record) => {
       if (record.guilds) {
         return record.guilds.some((guild: string) => selectedGuilds.includes(guild))
       }
       return selectedGuilds.includes(record.guild)
     })
+    
+    console.log('🔍 Registros filtrados:', filtered.length)
+    return filtered
   }, [historyData, selectedGuilds])
 
   // Aggregate data by day
   const dayStats = useMemo(() => {
     const stats: Record<string, DayStats> = {}
 
+    console.log('📅 Processando agrupamento por dia...')
+    console.log('📅 Registros para processar:', filteredRecords.length)
+
     filteredRecords.forEach((record) => {
-      const date = (record.event_date ? record.event_date.split('T')[0] : (record.created_at ? record.created_at.split('T')[0] : record.date))
+      const recordCreatedAt = record.created_at
+      const recordEventDate = record.event_date
+      const recordDate = record.date
+      
+      console.log('📅 Processando registro:', {
+        id: record.id,
+        created_at: recordCreatedAt,
+        event_date: recordEventDate,
+        date: recordDate
+      })
+      
+      const date = (() => {
+        // Prioridade: event_date > created_at > date
+        let targetDate: string | null = null
+        
+        if (record.event_date) {
+          targetDate = record.event_date
+        } else if (record.created_at) {
+          targetDate = record.created_at
+        } else if (record.date) {
+          targetDate = record.date
+        }
+        
+        if (!targetDate) {
+          console.warn('⚠️ Registro sem data:', record.id)
+          return new Date().toISOString().split('T')[0] // Data atual como fallback
+        }
+        
+        // Se a data já está no formato YYYY-MM-DD, usa diretamente
+        if (/^\d{4}-\d{2}-\d{2}$/.test(targetDate)) {
+          return targetDate
+        }
+        
+        // Se é uma data ISO com timezone, converte corretamente
+        try {
+          const dateObj = new Date(targetDate)
+          // Ajusta para timezone local para evitar deslocamento
+          const localDate = new Date(dateObj.getTime() - (dateObj.getTimezoneOffset() * 60000))
+          return localDate.toISOString().split('T')[0]
+        } catch (error) {
+          console.warn('⚠️ Erro ao processar data:', targetDate, error)
+          return new Date().toISOString().split('T')[0] // Data atual como fallback
+        }
+      })()
+      
+      console.log('📅 Data extraída:', date)
+      
       if (!stats[date]) {
         stats[date] = {
           date,
@@ -193,6 +268,9 @@ export function HistoryPage() {
         })
       }
     })
+
+    console.log('📅 Estatísticas por dia criadas:', Object.keys(stats))
+    console.log('📅 Detalhes das estatísticas:', stats)
 
     return Object.values(stats).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
   }, [filteredRecords])
@@ -528,12 +606,53 @@ export function HistoryPage() {
               <div className="space-y-3 pt-4 border-t border-neutral-700">
                 <h4 className="text-sm font-medium text-neutral-300">Registros do Dia</h4>
                 <div className="space-y-2">
-                  {filteredRecords
-                    .filter((record) => {
-                      const recordDate = record.created_at ? record.created_at.split('T')[0] : record.date
+                  {(() => {
+                    const dayRecords = filteredRecords.filter((record) => {
+                      // Usa a mesma lógica de processamento de data
+                      const recordDate = (() => {
+                        let targetDate: string | null = null
+                        
+                        if (record.event_date) {
+                          targetDate = record.event_date
+                        } else if (record.created_at) {
+                          targetDate = record.created_at
+                        } else if (record.date) {
+                          targetDate = record.date
+                        }
+                        
+                        if (!targetDate) return null
+                        
+                        // Se a data já está no formato YYYY-MM-DD, usa diretamente
+                        if (/^\d{4}-\d{2}-\d{2}$/.test(targetDate)) {
+                          return targetDate
+                        }
+                        
+                        // Se é uma data ISO com timezone, converte corretamente
+                        try {
+                          const dateObj = new Date(targetDate)
+                          // Ajusta para timezone local para evitar deslocamento
+                          const localDate = new Date(dateObj.getTime() - (dateObj.getTimezoneOffset() * 60000))
+                          return localDate.toISOString().split('T')[0]
+                        } catch (error) {
+                          console.warn('⚠️ Erro ao processar data para filtro:', targetDate, error)
+                          return null
+                        }
+                      })()
+                      
                       return recordDate === dayStat.date
                     })
-                    .map((record) => (
+                    
+                    console.log(`📅 Registros para ${dayStat.date}:`, dayRecords.length)
+                    console.log(`📅 Dados dos registros:`, dayRecords.map(r => ({
+                      id: r.id,
+                      arquivo_nome: r.arquivo_nome,
+                      guild: r.guild,
+                      guilds: r.guilds,
+                      created_at: r.created_at,
+                      event_date: r.event_date
+                    })))
+                    
+                    return dayRecords.map((record) => (
                       <div
                         key={record.id}
                         className="flex items-center justify-between bg-neutral-800 rounded-lg p-3 hover:bg-neutral-750 transition-colors"
@@ -572,7 +691,8 @@ export function HistoryPage() {
                           Ver
                         </Button>
                       </div>
-                    ))}
+                    ))
+                  })()}
                 </div>
               </div>
             </CardContent>
@@ -591,7 +711,38 @@ export function HistoryPage() {
 
                 const processedData = record.processedData || record
                 const guilds = processedData.guilds || [processedData.guild]
-                const eventDateIso = record.event_date || record.created_at || record.date
+                
+                // Usa a mesma lógica de processamento de data
+                const eventDateIso = (() => {
+                  let targetDate: string | null = null
+                  
+                  if (record.event_date) {
+                    targetDate = record.event_date
+                  } else if (record.created_at) {
+                    targetDate = record.created_at
+                  } else if (record.date) {
+                    targetDate = record.date
+                  }
+                  
+                  if (!targetDate) return null
+                  
+                  // Se a data já está no formato YYYY-MM-DD, usa diretamente
+                  if (/^\d{4}-\d{2}-\d{2}$/.test(targetDate)) {
+                    return targetDate
+                  }
+                  
+                  // Se é uma data ISO com timezone, converte corretamente
+                  try {
+                    const dateObj = new Date(targetDate)
+                    // Ajusta para timezone local para evitar deslocamento
+                    const localDate = new Date(dateObj.getTime() - (dateObj.getTimezoneOffset() * 60000))
+                    return localDate.toISOString()
+                  } catch (error) {
+                    console.warn('⚠️ Erro ao processar data no modal:', targetDate, error)
+                    return null
+                  }
+                })()
+                
                 const headerDate = eventDateIso ? new Date(eventDateIso).toLocaleDateString('pt-BR', { weekday: 'long', day: '2-digit', month: '2-digit', year: 'numeric' }) : ''
 
                 return (
