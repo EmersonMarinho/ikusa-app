@@ -184,7 +184,7 @@ async function processLogFileMock(file: File, territorio: 'Calpheon' | 'Kamasylv
 }
 
 // Real function to save to Supabase database
-export async function saveToDatabase(data: ProcessedLog, filename: string): Promise<ProcessLogRecord> {
+export async function saveToDatabase(data: ProcessedLog & { event_date?: string }, filename: string): Promise<ProcessLogRecord> {
   try {
     const recordData = {
       guild: data.guild,
@@ -203,6 +203,7 @@ export async function saveToDatabase(data: ProcessedLog, filename: string): Prom
       territorio: data.territorio,
       node: data.node,
       guildas_adversarias: data.guildasAdversarias,
+      event_date: data.event_date || null,
     }
 
     console.log('[Salvar] Enviando para process_logs:', recordData)

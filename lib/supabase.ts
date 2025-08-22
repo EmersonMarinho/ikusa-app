@@ -34,6 +34,7 @@ export interface ProcessLogRecord {
                 territorio: 'Calpheon' | 'Kamasylvia' | 'Siege'
   node: string
   guildas_adversarias: string[]
+  event_date?: string | null
 }
 
 // Função para inserir log processado

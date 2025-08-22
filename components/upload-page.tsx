@@ -40,6 +40,7 @@ export function UploadPage() {
   // Novos campos
   const [territorio, setTerritorio] = useState<'Calpheon' | 'Kamasylvia' | 'Siege'>('Calpheon')
   const [node, setNode] = useState('')
+  const [eventDate, setEventDate] = useState<string>('') // yyyy-MM-dd
 
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFile = event.target.files?.[0]
@@ -78,7 +79,7 @@ export function UploadPage() {
       // Salva automaticamente no banco se a opção estiver marcada
       if (saveToDb) {
         try {
-          await saveToDatabase(data, file.name)
+          await saveToDatabase({ ...data, event_date: eventDate ? new Date(eventDate).toISOString() : undefined } as any, file.name)
           setSaveSuccess(true)
           setSaveError(null)
         } catch (saveError) {
@@ -238,7 +239,7 @@ export function UploadPage() {
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div className="space-y-2">
               <Label htmlFor="territorio">Território</Label>
               <Select value={territorio} onValueChange={(value: 'Calpheon' | 'Kamasylvia' | 'Siege') => setTerritorio(value)}>
@@ -260,6 +261,17 @@ export function UploadPage() {
                 placeholder="Ex: Node War 1, Castle Siege..."
                 value={node}
                 onChange={(e) => setNode(e.target.value)}
+                className="bg-neutral-800 border-neutral-700"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="event-date">Data do evento</Label>
+              <Input
+                id="event-date"
+                type="date"
+                value={eventDate}
+                onChange={(e) => setEventDate(e.target.value)}
                 className="bg-neutral-800 border-neutral-700"
               />
             </div>

@@ -2,9 +2,12 @@
 
 import { useState, useMemo, useEffect } from "react"
 import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
 import { getRealHistory, getMockHistory, type ProcessedLog } from "@/lib/mock-data"
 import { CollapsibleClassItem } from "@/components/shared/collapsible-class-item"
 import { GuildFilterChips } from "@/components/shared/guild-filter-chips"
@@ -52,10 +55,13 @@ export function HistoryPage() {
   const [expandedDetails, setExpandedDetails] = useState<string | null>(null)
   const [viewingComplete, setViewingComplete] = useState<string | null>(null)
   const [selectedGuildView, setSelectedGuildView] = useState<string>("all")
+  const [modalSearch, setModalSearch] = useState<string>("")
+  const [modalClassFilter, setModalClassFilter] = useState<string>("all")
   const [showKillStats, setShowKillStats] = useState<Record<string, boolean>>({})
   const [historyData, setHistoryData] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [showAllGuildStats, setShowAllGuildStats] = useState(false)
 
   // Load real data from Supabase
   useEffect(() => {
@@ -89,7 +95,17 @@ export function HistoryPage() {
         guilds.add(record.guild)
       }
     })
-    return Array.from(guilds).sort()
+    // Mantém somente as principais (case-insensitive): Lollipop, Harvest, Chernobyl, Kiev
+    const main = ['lollipop','harvest','chernobyl','kiev']
+    const filtered = Array.from(guilds).filter(g => main.includes(g.toLowerCase()))
+    // Ordena na ordem desejada
+    const order = new Map<string, number>([
+      ['lollipop', 0],
+      ['harvest', 1],
+      ['chernobyl', 2],
+      ['kiev', 3],
+    ])
+    return filtered.sort((a,b)=> (order.get(a.toLowerCase()) ?? 99) - (order.get(b.toLowerCase()) ?? 99))
   }, [historyData])
 
   // Filter records based on selected guilds
@@ -108,7 +124,7 @@ export function HistoryPage() {
     const stats: Record<string, DayStats> = {}
 
     filteredRecords.forEach((record) => {
-      const date = record.created_at ? record.created_at.split('T')[0] : record.date
+      const date = (record.event_date ? record.event_date.split('T')[0] : (record.created_at ? record.created_at.split('T')[0] : record.date))
       if (!stats[date]) {
         stats[date] = {
           date,
@@ -237,6 +253,16 @@ export function HistoryPage() {
     setSelectedGuildView("all")
   }
 
+  // Fechar modal com tecla Esc
+  useEffect(() => {
+    if (!viewingComplete) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') closeCompleteRecord()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [viewingComplete])
+
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-96">
@@ -276,14 +302,36 @@ export function HistoryPage() {
       {/* Guild Statistics */}
       <Card className="border-neutral-800 bg-neutral-900">
         <CardHeader>
-          <CardTitle className="text-neutral-100 flex items-center">
-            <TrendingUpIcon className="h-5 w-5 mr-2" />
-            Estatísticas por Guilda
+          <CardTitle className="text-neutral-100 flex items-center justify-between">
+            <span className="flex items-center">
+              <TrendingUpIcon className="h-5 w-5 mr-2" />
+              Estatísticas por Guilda
+            </span>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="text-neutral-300 hover:text-neutral-100"
+              onClick={() => setShowAllGuildStats(v => !v)}
+            >
+              {showAllGuildStats ? 'Mostrar principais' : 'Mostrar todas'}
+            </Button>
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {guildStats.map((guildStat) => (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            {(() => {
+              const mainLower = new Set(['lollipop','harvest','chernobyl','kiev'])
+              const order = new Map<string, number>([
+                ['lollipop', 0],
+                ['harvest', 1],
+                ['chernobyl', 2],
+                ['kiev', 3],
+              ])
+              const list = (showAllGuildStats
+                ? guildStats
+                : guildStats.filter(g => mainLower.has((g.guild || '').toLowerCase()))
+              ).sort((a,b)=> (order.get((a.guild||'').toLowerCase()) ?? 99) - (order.get((b.guild||'').toLowerCase()) ?? 99))
+              return list.map((guildStat) => (
               <div
                 key={guildStat.guild}
                 className="bg-neutral-800 rounded-lg p-4 border border-neutral-700"
@@ -314,7 +362,8 @@ export function HistoryPage() {
                   </div>
                 </div>
               </div>
-            ))}
+            ))
+            })()}
           </div>
         </CardContent>
       </Card>
@@ -328,7 +377,7 @@ export function HistoryPage() {
                 <div className="flex items-center space-x-3">
                   <CalendarIcon className="h-5 w-5 text-blue-400" />
                   <div>
-                    <CardTitle className="text-neutral-100">{dayStat.date}</CardTitle>
+                    <CardTitle className="text-neutral-100">{new Date(dayStat.date).toLocaleDateString('pt-BR', { weekday: 'long', day: '2-digit', month: '2-digit', year: 'numeric' })}</CardTitle>
                     <p className="text-sm text-neutral-400">
                       {dayStat.recordCount} registro(s) • {dayStat.totalGeral} jogadores
                     </p>
@@ -534,141 +583,314 @@ export function HistoryPage() {
       {/* Complete Record View Modal */}
       {viewingComplete && (
         <div className="fixed inset-0 bg-black/80 flex items-center justify-center p-4 z-50">
-          <div className="bg-neutral-900 border border-neutral-800 rounded-lg max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+          <div className="bg-neutral-900 border border-neutral-800 rounded-lg max-w-6xl w-full max-h-[90vh] overflow-y-auto">
             <div className="p-6">
-              <div className="flex items-center justify-between mb-6">
-                <h2 className="text-2xl font-bold text-neutral-100">Registro Completo</h2>
-                <Button variant="ghost" size="sm" onClick={closeCompleteRecord}>
-                  <XIcon className="h-5 w-5" />
-                </Button>
-              </div>
-
               {(() => {
                 const record = historyData.find((r) => r.id === viewingComplete)
                 if (!record) return null
 
                 const processedData = record.processedData || record
                 const guilds = processedData.guilds || [processedData.guild]
+                const eventDateIso = record.event_date || record.created_at || record.date
+                const headerDate = eventDateIso ? new Date(eventDateIso).toLocaleDateString('pt-BR', { weekday: 'long', day: '2-digit', month: '2-digit', year: 'numeric' }) : ''
 
                 return (
                   <div className="space-y-6">
-                    {/* Informações da Guerra */}
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                      {processedData.territorio && (
-                        <StatsCard 
-                          title="Território" 
-                          value={processedData.territorio} 
-                          icon={MapIcon} 
-                          variant="info" 
-                        />
-                      )}
-                      {processedData.node && (
-                        <StatsCard 
-                          title="Node" 
-                          value={processedData.node} 
-                          variant="info" 
-                        />
-                      )}
-                      {processedData.guildasAdversarias && (
-                        <StatsCard 
-                          title="Guildas Adversárias" 
-                          value={processedData.guildasAdversarias.length} 
-                          variant="warning" 
-                        />
-                      )}
-                    </div>
-
-                    {/* Guild Selector */}
-                    {guilds.length > 1 && (
-                      <div className="flex items-center space-x-3">
-                        <label className="text-neutral-300">Guilda:</label>
-                        <Select value={selectedGuildView} onValueChange={setSelectedGuildView}>
-                          <SelectTrigger className="w-48 bg-neutral-800 border-neutral-700">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="all">Todas as Guildas</SelectItem>
-                            {guilds.map((guild: string) => (
-                              <SelectItem key={guild} value={guild}>
-                                {guild}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
+                    {/* Header */}
+                    <div className="flex items-start justify-between">
+                      <div>
+                        <h2 className="text-2xl font-bold text-neutral-100">{headerDate || 'Registro Completo'}</h2>
+                        {record.arquivo_nome && (
+                          <p className="text-sm text-neutral-400 mt-1">Arquivo: {record.arquivo_nome}</p>
+                        )}
                       </div>
-                    )}
-
-                    {/* Summary Cards */}
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                      <StatsCard
-                        title="Guilda"
-                        value={selectedGuildView === "all" ? guilds.join(", ") : selectedGuildView}
-                        icon={UsersIcon}
-                        variant="info"
-                      />
-                      <StatsCard
-                        title="Total Geral"
-                        value={processedData.total_geral || processedData.totalGeral}
-                        variant="success"
-                      />
-                      {processedData.kills_by_guild && (
-                        <StatsCard
-                          title="Total Kills"
-                          value={Object.values(processedData.kills_by_guild || {}).reduce((a: any, b: any) => (a || 0) + (b || 0), 0) as number}
-                          icon={SwordIcon}
-                          variant="success"
-                        />
-                      )}
+                      <Button variant="ghost" size="sm" onClick={closeCompleteRecord}>
+                        <XIcon className="h-5 w-5" />
+                      </Button>
                     </div>
 
-                    {/* Classes Breakdown */}
-                    <div className="space-y-4">
-                      <h3 className="text-lg font-semibold text-neutral-100">Total por Classe</h3>
-                      <div className="space-y-3">
-                        {(processedData.total_por_classe || processedData.totalPorClasse).map(({ classe, count }: any) => {
-                          const playersBase = selectedGuildView === "all" || !processedData.classes_by_guild
-                            ? (processedData.classes || {})[classe] || []
-                            : (processedData.classes_by_guild || {})[selectedGuildView]?.[classe] || []
+                    <Tabs defaultValue="resumo">
+                      <TabsList className="bg-neutral-800 border border-neutral-700">
+                        <TabsTrigger value="resumo">Resumo</TabsTrigger>
+                        <TabsTrigger value="jogadores">Jogadores</TabsTrigger>
+                        <TabsTrigger value="matriz">Matriz</TabsTrigger>
+                      </TabsList>
 
-                          // Enriquecer players com K/D do dia, se disponível
-                          const players = playersBase.map((p: any) => {
-                            const statsGuild = processedData.playerStatsByGuild || processedData.player_stats_by_guild || {}
-                            let kdInfo: { kills?: number; deaths?: number } = {}
-                            let killsVsChernobyl: number | undefined
-                            if (selectedGuildView === 'all') {
-                              for (const [guildName, byNick] of Object.entries(statsGuild as any)) {
-                                if ((byNick as any)[p.nick]) {
-                                  kdInfo = { kills: (byNick as any)[p.nick].kills, deaths: (byNick as any)[p.nick].deaths }
-                                  if (typeof (byNick as any)[p.nick].kills_vs_chernobyl === 'number') {
-                                    killsVsChernobyl = (byNick as any)[p.nick].kills_vs_chernobyl
+                      <TabsContent value="resumo" className="space-y-6 mt-4">
+                        {/* Informações da Guerra */}
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                          {processedData.territorio && (
+                            <StatsCard 
+                              title="Território" 
+                              value={processedData.territorio} 
+                              icon={MapIcon} 
+                              variant="info" 
+                            />
+                          )}
+                          {processedData.node && (
+                            <StatsCard 
+                              title="Node" 
+                              value={processedData.node} 
+                              variant="info" 
+                            />
+                          )}
+                          {processedData.guildasAdversarias && (
+                            <StatsCard 
+                              title="Guildas Adversárias" 
+                              value={processedData.guildasAdversarias.length} 
+                              variant="warning" 
+                            />
+                          )}
+                        </div>
+
+                        {/* Guild Selector */}
+                        {guilds.length > 1 && (
+                          <div className="flex items-center space-x-3">
+                            <label className="text-neutral-300">Guilda:</label>
+                            <Select value={selectedGuildView} onValueChange={setSelectedGuildView}>
+                              <SelectTrigger className="w-48 bg-neutral-800 border-neutral-700">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="all">Todas as Guildas</SelectItem>
+                                {guilds.map((guild: string) => (
+                                  <SelectItem key={guild} value={guild}>
+                                    {guild}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        )}
+
+                        {/* Summary Cards */}
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                          <StatsCard
+                            title="Guilda"
+                            value={selectedGuildView === "all" ? guilds.join(", ") : selectedGuildView}
+                            icon={UsersIcon}
+                            variant="info"
+                          />
+                          <StatsCard
+                            title="Total Geral"
+                            value={processedData.total_geral || processedData.totalGeral}
+                            variant="success"
+                          />
+                          {processedData.kills_by_guild && (
+                            <StatsCard
+                              title="Total Kills"
+                              value={Object.values(processedData.kills_by_guild || {}).reduce((a: any, b: any) => (a || 0) + (b || 0), 0) as number}
+                              icon={SwordIcon}
+                              variant="success"
+                            />
+                          )}
+                        </div>
+
+                        {/* Classes Breakdown */}
+                        <div className="space-y-4">
+                          <h3 className="text-lg font-semibold text-neutral-100">Total por Classe</h3>
+                          <div className="space-y-3">
+                            {(processedData.total_por_classe || processedData.totalPorClasse).map(({ classe, count }: any) => {
+                              const playersBase = selectedGuildView === "all" || !processedData.classes_by_guild
+                                ? (processedData.classes || {})[classe] || []
+                                : (processedData.classes_by_guild || {})[selectedGuildView]?.[classe] || []
+
+                              // Enriquecer players com K/D do dia, se disponível
+                              const players = playersBase.map((p: any) => {
+                                const statsGuild = processedData.playerStatsByGuild || processedData.player_stats_by_guild || {}
+                                let kdInfo: { kills?: number; deaths?: number } = {}
+                                let killsVsChernobyl: number | undefined
+                                if (selectedGuildView === 'all') {
+                                  for (const [guildName, byNick] of Object.entries(statsGuild as any)) {
+                                    if ((byNick as any)[p.nick]) {
+                                      kdInfo = { kills: (byNick as any)[p.nick].kills, deaths: (byNick as any)[p.nick].deaths }
+                                      if (typeof (byNick as any)[p.nick].kills_vs_chernobyl === 'number') {
+                                        killsVsChernobyl = (byNick as any)[p.nick].kills_vs_chernobyl
+                                      }
+                                      break
+                                    }
                                   }
-                                  break
+                                } else {
+                                  const byNick = (statsGuild as any)[selectedGuildView] || {}
+                                  if (byNick[p.nick]) {
+                                    kdInfo = { kills: byNick[p.nick].kills, deaths: byNick[p.nick].deaths }
+                                    if (typeof byNick[p.nick].kills_vs_chernobyl === 'number') {
+                                      killsVsChernobyl = byNick[p.nick].kills_vs_chernobyl
+                                    }
+                                  }
                                 }
-                              }
-                            } else {
-                              const byNick = (statsGuild as any)[selectedGuildView] || {}
-                              if (byNick[p.nick]) {
-                                kdInfo = { kills: byNick[p.nick].kills, deaths: byNick[p.nick].deaths }
-                                if (typeof byNick[p.nick].kills_vs_chernobyl === 'number') {
-                                  killsVsChernobyl = byNick[p.nick].kills_vs_chernobyl
-                                }
-                              }
+                                return { nick: p.nick, familia: p.familia, killsVsChernobyl, ...kdInfo }
+                              })
+
+                              return (
+                                <CollapsibleClassItem
+                                  key={classe}
+                                  classe={classe}
+                                  count={players.length}
+                                  players={players}
+                                  total={Number(processedData.total_geral || processedData.totalGeral)}
+                                />
+                              )
+                            })}
+                          </div>
+                        </div>
+                      </TabsContent>
+
+                      <TabsContent value="jogadores" className="mt-4 space-y-4">
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                          <div>
+                            <Label>Buscar jogador</Label>
+                            <Input placeholder="nick..." value={modalSearch} onChange={(e)=>setModalSearch(e.target.value)} className="bg-neutral-800 border-neutral-700" />
+                          </div>
+                          <div>
+                            <Label>Guilda</Label>
+                            <Select value={selectedGuildView} onValueChange={setSelectedGuildView}>
+                              <SelectTrigger className="bg-neutral-800 border-neutral-700">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="all">Todas</SelectItem>
+                                {guilds.map((g: string)=>(<SelectItem key={g} value={g}>{g}</SelectItem>))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          <div>
+                            <Label>Classe</Label>
+                            <Select value={modalClassFilter} onValueChange={setModalClassFilter}>
+                              <SelectTrigger className="bg-neutral-800 border-neutral-700">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="all">Todas</SelectItem>
+                                {Array.from(new Set(Object.values((processedData.playerStatsByGuild || processedData.player_stats_by_guild || {}) as any)
+                                  .flatMap((byNick: any)=> Object.values(byNick as any).map((p:any)=> p.classe || 'Desconhecida')))).sort().map((c:any)=> (
+                                  <SelectItem key={c} value={c}>{c}</SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        </div>
+
+                        {/* Resumo de composição por classe (da guilda selecionada ou todas) */}
+                        {(() => {
+                          const statsGuild = processedData.playerStatsByGuild || processedData.player_stats_by_guild || {}
+                          const wantedGuilds = selectedGuildView === 'all' ? guilds : [selectedGuildView]
+                          const classCounts: Record<string, number> = {}
+                          for (const g of wantedGuilds) {
+                            const byNick = (statsGuild as any)[g] || {}
+                            for (const [, st] of Object.entries(byNick)) {
+                              const classe = (st as any).classe || 'Desconhecida'
+                              classCounts[classe] = (classCounts[classe] || 0) + 1
                             }
-                            return { nick: p.nick, familia: p.familia, killsVsChernobyl, ...kdInfo }
-                          })
+                          }
+                          const summary = Object.entries(classCounts)
+                            .sort((a,b)=> b[1]-a[1])
+                            .map(([c,n])=> `${n} ${c}`)
+                            .join('  •  ')
+                          return (
+                            <div className="text-sm text-neutral-300">
+                              <span className="text-neutral-400 mr-2">Composição:</span>
+                              {summary || '—'}
+                            </div>
+                          )
+                        })()}
+
+                        {(() => {
+                          const statsGuild = processedData.playerStatsByGuild || processedData.player_stats_by_guild || {}
+                          const wantedGuilds = selectedGuildView === 'all' ? guilds : [selectedGuildView]
+                          const rows: Array<{nick:string; familia:string; guilda:string; classe:string; kills:number; deaths:number; kd:number; killsC:number; deathsC:number; kdC:number}> = []
+                          for (const g of wantedGuilds) {
+                            const byNick = (statsGuild as any)[g] || {}
+                            for (const [nick, st] of Object.entries(byNick)) {
+                              const classe = (st as any).classe || 'Desconhecida'
+                              const kills = (st as any).kills || 0
+                              const deaths = (st as any).deaths || 0
+                              const killsC = (st as any).kills_vs_chernobyl || 0
+                              const deathsC = (st as any).deaths_vs_chernobyl || 0
+                              const kd = deaths>0? kills/deaths : (kills>0? Infinity:0)
+                              const kdC = deathsC>0? killsC/deathsC : (killsC>0? Infinity:0)
+                              rows.push({ nick, familia: (st as any).familia || '', guilda: g, classe, kills, deaths, kd, killsC, deathsC, kdC })
+                            }
+                          }
+                          const filtered = rows.filter(r =>
+                            (modalSearch ? r.nick.toLowerCase().includes(modalSearch.toLowerCase()) : true) &&
+                            (modalClassFilter==='all' ? true : r.classe === modalClassFilter)
+                          ).sort((a,b)=> b.kills - a.kills)
 
                           return (
-                            <CollapsibleClassItem
-                              key={classe}
-                              classe={classe}
-                              count={players.length}
-                              players={players}
-                              total={Number(processedData.total_geral || processedData.totalGeral)}
-                            />
+                            <div className="overflow-x-auto border border-neutral-800 rounded-lg">
+                              <table className="w-full text-sm">
+                                <thead>
+                                  <tr className="border-b border-neutral-700">
+                                    <th className="text-left p-2 text-neutral-300">Jogador</th>
+                                    <th className="text-left p-2 text-neutral-300">Família</th>
+                                    <th className="text-left p-2 text-neutral-300">Guilda</th>
+                                    <th className="text-left p-2 text-neutral-300">Classe</th>
+                                    <th className="text-center p-2 text-neutral-300">Kills</th>
+                                    <th className="text-center p-2 text-neutral-300">Deaths</th>
+                                    <th className="text-center p-2 text-neutral-300">K/D</th>
+                                    {selectedGuildView === 'Lollipop' && (
+                                      <>
+                                        <th className="text-center p-2 text-neutral-300">Kills vs Chernobyl</th>
+                                        <th className="text-center p-2 text-neutral-300">Deaths vs Chernobyl</th>
+                                        <th className="text-center p-2 text-neutral-300">K/D vs Chernobyl</th>
+                                      </>
+                                    )}
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {filtered.map((r,i)=> (
+                                    <tr key={`${r.nick}-${i}`} className="border-b border-neutral-800 hover:bg-neutral-800">
+                                      <td className="p-2 text-neutral-200 font-medium">{r.nick}</td>
+                                      <td className="p-2 text-neutral-300">{r.familia}</td>
+                                      <td className="p-2 text-neutral-300">{r.guilda}</td>
+                                      <td className="p-2 text-neutral-300">{r.classe}</td>
+                                      <td className="p-2 text-center text-green-400 font-medium">{r.kills}</td>
+                                      <td className="p-2 text-center text-red-400 font-medium">{r.deaths}</td>
+                                      <td className="p-2 text-center font-semibold">{r.kd===Infinity? '∞' : r.kd.toFixed(2)}</td>
+                                      {selectedGuildView === 'Lollipop' && (
+                                        <>
+                                          <td className="p-2 text-center text-green-400">{r.killsC}</td>
+                                          <td className="p-2 text-center text-red-400">{r.deathsC}</td>
+                                          <td className="p-2 text-center font-semibold">{r.kdC===Infinity? '∞' : r.kdC.toFixed(2)}</td>
+                                        </>
+                                      )}
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </div>
                           )
-                        })}
-                      </div>
-                    </div>
+                        })()}
+                      </TabsContent>
+
+                      <TabsContent value="matriz" className="mt-4">
+                        {processedData.kills_matrix && (
+                          <div className="overflow-x-auto">
+                            <table className="w-full text-sm">
+                              <thead>
+                                <tr className="border-b border-neutral-700">
+                                  <th className="text-left p-2 text-neutral-400">Killer</th>
+                                  {Object.keys(processedData.kills_matrix).map((g:string)=> (
+                                    <th key={g} className="text-center p-2 text-neutral-400">{g}</th>
+                                  ))}
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {Object.entries(processedData.kills_matrix).map(([killer, victims]: any) => (
+                                  <tr key={killer} className="border-b border-neutral-800">
+                                    <td className="p-2 text-neutral-300 font-medium">{killer}</td>
+                                    {Object.keys(processedData.kills_matrix).map((victim:string)=> (
+                                      <td key={victim} className="text-center p-2 text-neutral-200">{victims[victim] || 0}</td>
+                                    ))}
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        )}
+                      </TabsContent>
+                    </Tabs>
                   </div>
                 )
               })()}

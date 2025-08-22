@@ -116,6 +116,7 @@ export async function POST() {
       'ALTER TABLE process_logs ADD COLUMN IF NOT EXISTS deaths_by_guild JSONB;',
       'ALTER TABLE process_logs ADD COLUMN IF NOT EXISTS kd_ratio_by_guild JSONB;',
       'ALTER TABLE process_logs ADD COLUMN IF NOT EXISTS kills_matrix JSONB;',
+      'ALTER TABLE process_logs ADD COLUMN IF NOT EXISTS event_date TIMESTAMP WITH TIME ZONE;',
       'ALTER TABLE process_logs ADD COLUMN IF NOT EXISTS territorio TEXT CHECK (territorio IN (\'Calpheon\', \'Kamasylvia\', \'Siege\'));',
       'ALTER TABLE process_logs ADD COLUMN IF NOT EXISTS node TEXT;',
       'ALTER TABLE process_logs ADD COLUMN IF NOT EXISTS guildas_adversarias JSONB;'
@@ -177,6 +178,7 @@ export async function POST() {
     // Criar índices para melhor performance
     const indexes = [
       'CREATE INDEX IF NOT EXISTS idx_process_logs_created_at ON process_logs(created_at);',
+      'CREATE INDEX IF NOT EXISTS idx_process_logs_event_date ON process_logs(event_date);',
       'CREATE INDEX IF NOT EXISTS idx_process_logs_territorio ON process_logs(territorio);',
       'CREATE INDEX IF NOT EXISTS idx_alliance_cache_guilda ON alliance_cache(guilda);',
       'CREATE INDEX IF NOT EXISTS idx_monthly_kda_month_year ON monthly_kda(month_year);',
