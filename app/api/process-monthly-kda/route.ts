@@ -519,10 +519,14 @@ export async function GET(request: NextRequest) {
     // Processa todos os logs do mês
     const allPlayerStats = new Map<string, MonthlyKDARecord>()
     
-    // Mapa de família -> guilda usando cache atual
+    // Mapa de família -> guilda usando cache atual (atualiza antes)
     const baseUrl = getBaseUrl()
     console.log(`🌐 Base URL: ${baseUrl}`)
-    
+    try {
+      await fetch(`${baseUrl}/api/alliance-cache`, { method: 'POST', cache: 'no-store' })
+    } catch (e) {
+      console.warn('⚠️ Falha ao atualizar cache da aliança no GET. Prosseguindo com cache atual.', e)
+    }
     const familiaToGuild = await getAllianceFamilyMap(baseUrl)
     console.log(`👥 Mapa família->guilda: ${Object.keys(familiaToGuild).length} famílias mapeadas`)
     
@@ -576,6 +580,36 @@ export async function GET(request: NextRequest) {
       }
     }
     
+    // Pós-ajuste: reforça mapeamento de guilda usando família do cache e presença nos logs por guilda
+    function inferGuildFromLogs(nick: string): 'Manifest' | 'Allyance' | 'Grand_Order' | undefined {
+      const allianceGuilds: Array<'Manifest' | 'Allyance' | 'Grand_Order'> = ['Manifest', 'Allyance', 'Grand_Order']
+      const nickNorm = normalizeNick(nick)
+      for (const g of allianceGuilds) {
+        for (const log of logs) {
+          const byGuildAny = (log as any)?.classes_by_guild || (log as any)?.classesByGuild || {}
+          const classesObj = byGuildAny[g]
+          if (!classesObj) continue
+          for (const [_cls, players] of Object.entries(classesObj as any)) {
+            if (Array.isArray(players) && players.some((p: any) => normalizeNick(p.nick) === nickNorm)) {
+              return g
+            }
+          }
+        }
+      }
+      return undefined
+    }
+
+    for (const [, player] of allPlayerStats) {
+      const famNorm = normalizeFamilia(player.player_familia)
+      const mapped = famNorm ? (familiaToGuild as any)[famNorm] as ('Manifest'|'Allyance'|'Grand_Order'|undefined) : undefined
+      if (mapped) {
+        (player as any).guilda = mapped
+      } else {
+        const inferred = inferGuildFromLogs(player.player_nick)
+        if (inferred) (player as any).guilda = inferred
+      }
+    }
+
     // Calcula K/D ratios
     for (const [, playerStats] of allPlayerStats) {
       playerStats.kd_overall = playerStats.total_deaths > 0 
