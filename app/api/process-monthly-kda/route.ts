@@ -346,10 +346,27 @@ function processLogForMonthlyKDA(
             const byNick = nickToFamilia[normalizeNick(nick)]
             if (byNick) familiaNorm = byNick
           }
-          const mappedGuild = familiaToGuild[familiaNorm]
+          let mappedGuild = familiaToGuild[familiaNorm] as ('Manifest' | 'Allyance' | 'Grand_Order') | undefined
           if (!mappedGuild) {
-            // Sem correspondência -> ignora (não pertence à aliança rastreada)
-            continue
+            // Tenta inferir pela presença nas classes_by_guild das guildas da aliança
+            const allianceGuilds: Array<'Manifest' | 'Allyance' | 'Grand_Order'> = ['Manifest', 'Allyance', 'Grand_Order']
+            const byGuildAny = (logData as any)?.classes_by_guild || (logData as any)?.classesByGuild || {}
+            const nickNorm = normalizeNick(nick)
+            for (const g of allianceGuilds) {
+              const classesObj = byGuildAny[g]
+              if (!classesObj) continue
+              for (const [className, players] of Object.entries(classesObj as any)) {
+                if (Array.isArray(players) && players.some((p: any) => normalizeNick(p.nick) === nickNorm)) {
+                  mappedGuild = g
+                  break
+                }
+              }
+              if (mappedGuild) break
+            }
+          }
+          if (!mappedGuild) {
+            // Fallback temporário: classificar como Manifest para não perder o jogador
+            mappedGuild = 'Manifest'
           }
           const playerKey = nick
           if (!playerStats.has(playerKey)) {
