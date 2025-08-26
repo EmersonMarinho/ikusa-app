@@ -57,6 +57,7 @@ export function HistoryPage() {
   const [selectedGuildView, setSelectedGuildView] = useState<string>("all")
   const [modalSearch, setModalSearch] = useState<string>("")
   const [modalClassFilter, setModalClassFilter] = useState<string>("all")
+  const [sortBy, setSortBy] = useState<string>("kills")
   const [showKillStats, setShowKillStats] = useState<Record<string, boolean>>({})
   const [historyData, setHistoryData] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
@@ -765,6 +766,7 @@ export function HistoryPage() {
                         <TabsTrigger value="resumo">Resumo</TabsTrigger>
                         <TabsTrigger value="jogadores">Jogadores</TabsTrigger>
                         <TabsTrigger value="matriz">Matriz</TabsTrigger>
+                        <TabsTrigger value="kd-vs-guildas">KD vs Guildas</TabsTrigger>
                       </TabsList>
 
                       <TabsContent value="resumo" className="space-y-6 mt-4">
@@ -888,7 +890,7 @@ export function HistoryPage() {
                       </TabsContent>
 
                       <TabsContent value="jogadores" className="mt-4 space-y-4">
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                        <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
                           <div>
                             <Label>Buscar jogador</Label>
                             <Input placeholder="nick..." value={modalSearch} onChange={(e)=>setModalSearch(e.target.value)} className="bg-neutral-800 border-neutral-700" />
@@ -917,6 +919,21 @@ export function HistoryPage() {
                                   .flatMap((byNick: any)=> Object.values(byNick as any).map((p:any)=> p.classe || 'Desconhecida')))).sort().map((c:any)=> (
                                   <SelectItem key={c} value={c}>{c}</SelectItem>
                                 ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          <div>
+                            <Label>Ordenar por</Label>
+                            <Select value={sortBy} onValueChange={setSortBy}>
+                              <SelectTrigger className="bg-neutral-800 border-neutral-700">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="kills">Kills (maior)</SelectItem>
+                                <SelectItem value="kd">K/D (maior)</SelectItem>
+                                <SelectItem value="kd_chernobyl">K/D vs Chernobyl (maior)</SelectItem>
+                                <SelectItem value="deaths">Deaths (menor)</SelectItem>
+                                <SelectItem value="nick">Nome (A-Z)</SelectItem>
                               </SelectContent>
                             </Select>
                           </div>
@@ -966,7 +983,26 @@ export function HistoryPage() {
                           const filtered = rows.filter(r =>
                             (modalSearch ? r.nick.toLowerCase().includes(modalSearch.toLowerCase()) : true) &&
                             (modalClassFilter==='all' ? true : r.classe === modalClassFilter)
-                          ).sort((a,b)=> b.kills - a.kills)
+                          ).sort((a,b)=> {
+                            if (sortBy === 'kills') return b.kills - a.kills
+                            if (sortBy === 'kd') {
+                              // Ordena Infinity no topo, depois por K/D decrescente
+                              if (!isFinite(b.kd) && isFinite(a.kd)) return 1
+                              if (!isFinite(a.kd) && isFinite(b.kd)) return -1
+                              if (b.kd === a.kd) return b.kills - a.kills
+                              return b.kd - a.kd
+                            }
+                            if (sortBy === 'kd_chernobyl') {
+                              // Ordena Infinity no topo, depois por K/D vs Chernobyl decrescente
+                              if (!isFinite(b.kdC) && isFinite(a.kdC)) return 1
+                              if (!isFinite(a.kdC) && isFinite(b.kdC)) return -1
+                              if (b.kdC === a.kdC) return b.killsC - a.killsC
+                              return b.kdC - a.kdC
+                            }
+                            if (sortBy === 'deaths') return a.deaths - b.deaths
+                            if (sortBy === 'nick') return a.nick.localeCompare(b.nick)
+                            return 0
+                          })
 
                           return (
                             <div className="overflow-x-auto border border-neutral-800 rounded-lg">
@@ -1040,6 +1076,139 @@ export function HistoryPage() {
                             </table>
                           </div>
                         )}
+                      </TabsContent>
+
+                      <TabsContent value="kd-vs-guildas" className="mt-4">
+                        {(() => {
+                          // Calcula K/D geral contra cada guilda
+                          const statsGuild = processedData.playerStatsByGuild || processedData.player_stats_by_guild || {}
+                          const guildStats: Record<string, { kills: number; deaths: number; kd: number; players: number }> = {}
+                          
+                          // Inicializa estatísticas para cada guilda
+                          guilds.forEach((guild: string) => {
+                            guildStats[guild] = { kills: 0, deaths: 0, kd: 0, players: 0 }
+                          })
+                          
+                          // Soma kills e deaths por guilda
+                          Object.entries(statsGuild).forEach(([guildName, byNick]: [string, any]) => {
+                            Object.values(byNick).forEach((player: any) => {
+                              const kills = player.kills || 0
+                              const deaths = player.deaths || 0
+                              
+                              guildStats[guildName].kills += kills
+                              guildStats[guildName].deaths += deaths
+                              guildStats[guildName].players += 1
+                            })
+                          })
+                          
+                          // Calcula K/D para cada guilda
+                          Object.values(guildStats).forEach(stats => {
+                            if (stats.deaths > 0) {
+                              stats.kd = stats.kills / stats.deaths
+                            } else {
+                              stats.kd = stats.kills > 0 ? Infinity : 0
+                            }
+                          })
+                          
+                          // Ordena guildas por K/D (maior primeiro)
+                          const sortedGuilds = Object.entries(guildStats)
+                            .sort(([,a], [,b]) => {
+                              if (!isFinite(b.kd) && isFinite(a.kd)) return 1
+                              if (!isFinite(a.kd) && isFinite(b.kd)) return -1
+                              if (b.kd === a.kd) return b.kills - a.kills
+                              return b.kd - a.kd
+                            })
+                          
+                          return (
+                            <div className="space-y-4">
+                              <div className="text-sm text-neutral-400">
+                                K/D geral da aliança contra cada guilda neste dia • {guilds.length} guildas analisadas
+                              </div>
+                              
+                              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                                {sortedGuilds.map(([guildName, stats]) => (
+                                  <Card key={guildName} className="border-neutral-700 bg-neutral-800">
+                                    <CardHeader className="pb-3">
+                                      <CardTitle className="text-neutral-200 text-base flex items-center justify-between">
+                                        <span className="flex items-center gap-2">
+                                          <UsersIcon className="h-4 w-4 text-blue-400" />
+                                          {guildName}
+                                        </span>
+                                        <Badge variant="outline" className={
+                                          guildName === 'Manifest' ? 'border-blue-700 text-blue-300' :
+                                          guildName === 'Allyance' ? 'border-green-700 text-green-300' :
+                                          guildName === 'Grand_Order' ? 'border-purple-700 text-purple-300' :
+                                          'border-yellow-700 text-yellow-300'
+                                        }>
+                                          {stats.players} jogadores
+                                        </Badge>
+                                      </CardTitle>
+                                    </CardHeader>
+                                    <CardContent className="space-y-3">
+                                      <div className="grid grid-cols-2 gap-3">
+                                        <div className="text-center p-2 bg-neutral-700 rounded border border-neutral-600">
+                                          <div className="text-lg font-bold text-green-400">{stats.kills}</div>
+                                          <div className="text-xs text-neutral-400">Kills</div>
+                                        </div>
+                                        <div className="text-center p-2 bg-neutral-700 rounded border border-neutral-600">
+                                          <div className="text-xs font-bold text-red-400">{stats.deaths}</div>
+                                          <div className="text-xs text-neutral-400">Deaths</div>
+                                        </div>
+                                      </div>
+                                      <div className="text-center p-2 bg-neutral-700 rounded border border-neutral-600">
+                                        <div className={`text-lg font-bold ${
+                                          stats.kd >= 1 ? 'text-green-400' : 'text-red-400'
+                                        }`}>
+                                          {stats.kd === Infinity ? '∞' : stats.kd.toFixed(2)}
+                                        </div>
+                                        <div className="text-xs text-neutral-400">K/D Geral</div>
+                                      </div>
+                                    </CardContent>
+                                  </Card>
+                                ))}
+                              </div>
+                              
+                              {/* Resumo geral */}
+                              <Card className="border-neutral-700 bg-neutral-800">
+                                <CardHeader className="pb-3">
+                                  <CardTitle className="text-neutral-200 text-base flex items-center gap-2">
+                                    <TrendingUpIcon className="h-4 w-4 text-green-400" />
+                                    Resumo Geral da Aliança
+                                  </CardTitle>
+                                </CardHeader>
+                                <CardContent>
+                                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                                    <div className="text-center p-3 bg-neutral-700 rounded border border-neutral-600">
+                                      <div className="text-lg font-bold text-green-400">
+                                        {Object.values(guildStats).reduce((sum, s) => sum + s.kills, 0)}
+                                      </div>
+                                      <div className="text-xs text-neutral-400">Total Kills</div>
+                                    </div>
+                                    <div className="text-center p-3 bg-neutral-700 rounded border border-neutral-600">
+                                      <div className="text-lg font-bold text-red-400">
+                                        {Object.values(guildStats).reduce((sum, s) => sum + s.deaths, 0)}
+                                      </div>
+                                      <div className="text-xs text-neutral-400">Total Deaths</div>
+                                    </div>
+                                    <div className="text-center p-3 bg-neutral-700 rounded border border-neutral-600">
+                                      <div className="text-lg font-bold text-blue-400">
+                                        {(() => {
+                                          const totalKills = Object.values(guildStats).reduce((sum, s) => sum + s.kills, 0)
+                                          const totalDeaths = Object.values(guildStats).reduce((sum, s) => sum + s.deaths, 0)
+                                          if (totalDeaths > 0) {
+                                            return (totalKills / totalDeaths).toFixed(2)
+                                          }
+                                          return totalKills > 0 ? '∞' : '0.00'
+                                        })()}
+                                      </div>
+                                      <div className="text-xs text-neutral-400">K/D Geral</div>
+                                    </div>
+                                  </div>
+                                </CardContent>
+                              </Card>
+                            </div>
+                          )
+                        })()}
                       </TabsContent>
                     </Tabs>
                   </div>

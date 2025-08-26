@@ -8,14 +8,18 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Accordion, AccordionItem, AccordionTrigger, AccordionContent } from "@/components/ui/accordion"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { 
   UsersIcon, 
   SwordIcon, 
   SkullIcon, 
   RefreshCwIcon,
   TrendingUpIcon,
-  ShieldIcon
+  ShieldIcon,
+  HomeIcon,
+  BuildingIcon
 } from "lucide-react"
+import { FamilyCard } from "@/components/shared/family-card"
 
 interface AllianceMember {
   familia: string
@@ -31,6 +35,31 @@ interface FamilyData {
     classe: string
     lastSeen: Date
   }>
+}
+
+// Interface para dados agrupados por família
+interface FamilyGroupedData {
+  familia: string
+  guilda: string
+  classes: Array<{
+    classe: string
+    kills: number
+    deaths: number
+    kills_vs_chernobyl: number
+    deaths_vs_chernobyl: number
+    kills_vs_others: number
+    deaths_vs_others: number
+    last_played: string
+  }>
+  total_kills: number
+  total_deaths: number
+  total_kills_vs_chernobyl: number
+  total_deaths_vs_chernobyl: number
+  total_kills_vs_others: number
+  total_deaths_vs_others: number
+  kd_overall: number
+  kd_vs_chernobyl: number
+  kd_vs_others: number
 }
 
 // Removido: interface KDAStats e recursos associados
@@ -84,10 +113,14 @@ export default function KDAMensalPage() {
   const [lastUpdate, setLastUpdate] = useState<Date | null>(null)
   const [error, setError] = useState<string | null>(null)
   
+  // Dados agrupados por família
+  const [familyGroupedData, setFamilyGroupedData] = useState<FamilyGroupedData[]>([])
+  
   // Filtros
   const [filters, setFilters] = useState({
     guilda: 'all',
     metric: 'overall' as 'overall' | 'vs_chernobyl' | 'vs_others',
+    familyName: '',
   })
 
   // Ranking por classe
@@ -173,9 +206,13 @@ export default function KDAMensalPage() {
         setMonthlyKDAData(data.players)
         setLastUpdate(new Date())
         console.log(`✅ KDA mensal carregado: ${data.players.length} jogadores`)
+        
+        // Agrupa dados por família
+        groupDataByFamily(data.players)
       } else {
         console.error('Erro ao carregar KDA mensal:', data.message)
         setMonthlyKDAData([])
+        setFamilyGroupedData([])
         // Mostra erro mais amigável
         if (data.message?.includes('Nenhum log encontrado')) {
           setError('Nenhum log encontrado para este mês. Processe alguns logs primeiro.')
@@ -186,10 +223,102 @@ export default function KDAMensalPage() {
     } catch (error) {
       console.error('Erro ao carregar KDA mensal:', error)
       setMonthlyKDAData([])
+      setFamilyGroupedData([])
       setError(`Erro de conexão: ${error instanceof Error ? error.message : 'Erro desconhecido'}`)
     } finally {
       setIsLoading(false)
     }
+  }
+
+  // Função para agrupar dados por família
+  const groupDataByFamily = (players: MonthlyKDAData[]) => {
+    const familyMap = new Map<string, FamilyGroupedData>()
+    
+    for (const player of players) {
+      const familia = player.player_familia
+      
+      if (!familyMap.has(familia)) {
+        familyMap.set(familia, {
+          familia,
+          guilda: player.guilda,
+          classes: [],
+          total_kills: 0,
+          total_deaths: 0,
+          total_kills_vs_chernobyl: 0,
+          total_deaths_vs_chernobyl: 0,
+          total_kills_vs_others: 0,
+          total_deaths_vs_others: 0,
+          kd_overall: 0,
+          kd_vs_chernobyl: 0,
+          kd_vs_others: 0
+        })
+      }
+      
+      const familyData = familyMap.get(familia)!
+      
+      // Adiciona classes do jogador
+      for (const classData of player.classes_played) {
+        const existingClass = familyData.classes.find(c => c.classe === classData.classe)
+        if (existingClass) {
+          // Soma estatísticas se a classe já existe
+          existingClass.kills += classData.kills
+          existingClass.deaths += classData.deaths
+          existingClass.kills_vs_chernobyl += classData.kills_vs_chernobyl
+          existingClass.deaths_vs_chernobyl += classData.deaths_vs_chernobyl
+          existingClass.kills_vs_others += classData.kills_vs_others
+          existingClass.deaths_vs_others += classData.deaths_vs_others
+          existingClass.last_played = new Date(Math.max(
+            new Date(existingClass.last_played).getTime(),
+            new Date(classData.last_played).getTime()
+          )).toISOString()
+        } else {
+          // Adiciona nova classe
+          familyData.classes.push({
+            classe: classData.classe,
+            kills: classData.kills,
+            deaths: classData.deaths,
+            kills_vs_chernobyl: classData.kills_vs_chernobyl,
+            deaths_vs_chernobyl: classData.deaths_vs_chernobyl,
+            kills_vs_others: classData.kills_vs_others,
+            deaths_vs_others: classData.deaths_vs_others,
+            last_played: classData.last_played
+          })
+        }
+      }
+      
+      // Soma totais
+      familyData.total_kills += player.total_kills
+      familyData.total_deaths += player.total_deaths
+      familyData.total_kills_vs_chernobyl += player.total_kills_vs_chernobyl
+      familyData.total_deaths_vs_chernobyl += player.total_deaths_vs_chernobyl
+      familyData.total_kills_vs_others += player.total_kills_vs_others
+      familyData.total_deaths_vs_others += player.total_deaths_vs_others
+    }
+    
+    // Calcula K/D ratios para cada família
+    for (const familyData of familyMap.values()) {
+      familyData.kd_overall = familyData.total_deaths > 0 
+        ? familyData.total_kills / familyData.total_deaths 
+        : (familyData.total_kills > 0 ? Infinity : 0)
+        
+      familyData.kd_vs_chernobyl = familyData.total_deaths_vs_chernobyl > 0 
+        ? familyData.total_kills_vs_chernobyl / familyData.total_deaths_vs_chernobyl 
+        : (familyData.total_kills_vs_chernobyl > 0 ? Infinity : 0)
+        
+      familyData.kd_vs_others = familyData.total_deaths_vs_others > 0 
+        ? familyData.total_kills_vs_others / familyData.total_deaths_vs_others 
+        : (familyData.total_kills_vs_others > 0 ? Infinity : 0)
+    }
+    
+    // Converte para array e ordena por K/D geral
+    const sortedFamilies = Array.from(familyMap.values()).sort((a, b) => {
+      if (!isFinite(b.kd_overall) && isFinite(a.kd_overall)) return 1
+      if (!isFinite(a.kd_overall) && isFinite(b.kd_overall)) return -1
+      if (b.kd_overall === a.kd_overall) return b.total_kills - a.total_kills
+      return b.kd_overall - a.kd_overall
+    })
+    
+    setFamilyGroupedData(sortedFamilies)
   }
 
   // Processa logs mensais e salva no banco
@@ -320,6 +449,43 @@ export default function KDAMensalPage() {
         </Card>
       </div>
 
+      {/* Estatísticas das Famílias */}
+      {familyGroupedData.length > 0 && (
+        <Card className="border-neutral-800 bg-neutral-900">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-neutral-100 text-lg flex items-center gap-2">
+              <BuildingIcon className="h-4 w-4 text-blue-400" />
+              Estatísticas das Famílias
+            </CardTitle>
+            <CardDescription className="text-sm">
+              Resumo das {familyGroupedData.length} famílias ativas com dados de KDA
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="max-h-96 overflow-y-auto">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              <div className="text-center p-3 bg-neutral-800 rounded border border-neutral-700">
+                <div className="text-lg font-bold text-green-400">
+                  {familyGroupedData.reduce((sum, f) => sum + f.total_kills, 0).toLocaleString()}
+                </div>
+                <div className="text-xs text-neutral-400">Total de Kills</div>
+              </div>
+              <div className="text-center p-3 bg-neutral-800 rounded border border-neutral-700">
+                <div className="text-lg font-bold text-red-400">
+                  {familyGroupedData.reduce((sum, f) => sum + f.total_deaths, 0).toLocaleString()}
+                </div>
+                <div className="text-xs text-neutral-400">Total de Deaths</div>
+              </div>
+              <div className="text-center p-3 bg-neutral-800 rounded border border-neutral-700">
+                <div className="text-lg font-bold text-blue-400">
+                  {familyGroupedData.reduce((sum, f) => sum + f.classes.length, 0)}
+                </div>
+                <div className="text-xs text-neutral-400">Total de Classes</div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Controles */}
       <Card className="border-neutral-800 bg-neutral-900">
         <CardHeader>
@@ -422,94 +588,175 @@ export default function KDAMensalPage() {
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-neutral-700">
-                    <th className="text-left p-2 text-neutral-300">Jogador</th>
-                    <th className="text-left p-2 text-neutral-300">Família</th>
-                    <th className="text-left p-2 text-neutral-300">Guilda</th>
-                    <th className="text-center p-2 text-neutral-300">Classes</th>
-                    <th className="text-center p-2 text-neutral-300">Kills</th>
-                    <th className="text-center p-2 text-neutral-300">Deaths</th>
-                    <th className="text-center p-2 text-neutral-300">K/D Geral</th>
-                    <th className="text-center p-2 text-neutral-300">K/D vs Chernobyl</th>
-                    <th className="text-center p-2 text-neutral-300">K/D vs Outros</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {monthlyKDAData
-                    .filter(player => {
-                      if (tableClass !== 'all') {
-                        const hasClass = player.classes_played.some(c => c.classe === tableClass)
-                        if (!hasClass) return false
-                      }
-                      if (filters.guilda === 'Alliance') {
-                        return ['Manifest', 'Allyance', 'Grand_Order'].includes(player.guilda)
-                      }
-                      if (filters.guilda !== 'all' && player.guilda !== filters.guilda) return false
-                      return true
-                    })
-                    .sort((a, b) => {
-                      const pick = (p: any) => filters.metric === 'overall' ? p.kd_overall : filters.metric === 'vs_chernobyl' ? p.kd_vs_chernobyl : p.kd_vs_others
-                      const ka = pick(a)
-                      const kb = pick(b)
-                      if (ka === kb) return b.total_kills - a.total_kills
-                      // Ordena Infinity no topo
-                      if (!isFinite(kb) && isFinite(ka)) return 1
-                      if (!isFinite(ka) && isFinite(kb)) return -1
-                      return kb - ka
-                    })
-                    .map((player, index) => (
-                    <tr key={index} className="border-b border-neutral-800 hover:bg-neutral-800">
-                      <td className="p-2 text-neutral-200 font-medium">{player.player_nick}</td>
-                      <td className="p-2 text-neutral-300">{player.player_familia}</td>
-                      <td className="p-2">
-                        <Badge variant="outline" className={
-                          player.guilda === 'Manifest' ? 'border-blue-700 text-blue-300' :
-                          player.guilda === 'Allyance' ? 'border-green-700 text-green-300' :
-                          player.guilda === 'Grand_Order' ? 'border-purple-700 text-purple-300' :
-                          'border-yellow-700 text-yellow-300'
-                        }>
-                          {player.guilda}
-                        </Badge>
-                      </td>
-                      <td className="p-2 text-center">
-                        <div className="flex flex-wrap gap-1">
-                          {player.classes_played.slice(0, 3).map((cls, i) => (
-                            <Badge key={i} variant="secondary" className="text-xs">
-                              {cls.classe}
+            <Tabs defaultValue="players" className="w-full">
+              <TabsList className="grid w-full grid-cols-2 bg-neutral-800">
+                <TabsTrigger value="players" className="data-[state=active]:bg-neutral-700">
+                  <HomeIcon className="h-4 w-4 mr-2" />
+                  Por Jogador
+                </TabsTrigger>
+                <TabsTrigger value="families" className="data-[state=active]:bg-neutral-700">
+                  <BuildingIcon className="h-4 w-4 mr-2" />
+                  Por Família
+                </TabsTrigger>
+              </TabsList>
+              
+              <TabsContent value="players" className="mt-4">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-neutral-700">
+                        <th className="text-left p-2 text-neutral-300">Jogador</th>
+                        <th className="text-left p-2 text-neutral-300">Família</th>
+                        <th className="text-left p-2 text-neutral-300">Guilda</th>
+                        <th className="text-center p-2 text-neutral-300">Classes</th>
+                        <th className="text-center p-2 text-neutral-300">Kills</th>
+                        <th className="text-center p-2 text-neutral-300">Deaths</th>
+                        <th className="text-center p-2 text-neutral-300">K/D Geral</th>
+                        <th className="text-center p-2 text-neutral-300">K/D vs Chernobyl</th>
+                        <th className="text-center p-2 text-neutral-300">K/D vs Outros</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {monthlyKDAData
+                        .filter(player => {
+                          if (tableClass !== 'all') {
+                            const hasClass = player.classes_played.some(c => c.classe === tableClass)
+                            if (!hasClass) return false
+                          }
+                          if (filters.guilda === 'Alliance') {
+                            return ['Manifest', 'Allyance', 'Grand_Order'].includes(player.guilda)
+                          }
+                          if (filters.guilda !== 'all' && player.guilda !== filters.guilda) return false
+                          return true
+                        })
+                        .sort((a, b) => {
+                          const pick = (p: any) => filters.metric === 'overall' ? p.kd_overall : filters.metric === 'vs_chernobyl' ? p.kd_vs_chernobyl : p.kd_vs_others
+                          const ka = pick(a)
+                          const kb = pick(b)
+                          if (ka === kb) return b.total_kills - a.total_kills
+                          // Ordena Infinity no topo
+                          if (!isFinite(kb) && isFinite(ka)) return 1
+                          if (!isFinite(ka) && isFinite(kb)) return -1
+                          return kb - ka
+                        })
+                        .map((player, index) => (
+                        <tr key={index} className="border-b border-neutral-800 hover:bg-neutral-800">
+                          <td className="p-2 text-neutral-200 font-medium">{player.player_nick}</td>
+                          <td className="p-2 text-neutral-300">{player.player_familia}</td>
+                          <td className="p-2">
+                            <Badge variant="outline" className={
+                              player.guilda === 'Manifest' ? 'border-blue-700 text-blue-300' :
+                              player.guilda === 'Allyance' ? 'border-green-700 text-green-300' :
+                              player.guilda === 'Grand_Order' ? 'border-purple-700 text-purple-300' :
+                              'border-yellow-700 text-yellow-300'
+                            }>
+                              {player.guilda}
                             </Badge>
-                          ))}
-                          {player.classes_played.length > 3 && (
-                            <Badge variant="secondary" className="text-xs">
-                              +{player.classes_played.length - 3}
-                            </Badge>
-                          )}
-                        </div>
-                      </td>
-                      <td className="p-2 text-center text-green-400 font-medium">{player.total_kills}</td>
-                      <td className="p-2 text-center text-red-400 font-medium">{player.total_deaths}</td>
-                      <td className="p-2 text-center font-semibold">
-                        <span className={player.kd_overall >= 1 ? 'text-green-400' : 'text-red-400'}>
-                          {player.kd_overall === Infinity ? '∞' : player.kd_overall.toFixed(2)}
-                        </span>
-                      </td>
-                      <td className="p-2 text-center font-semibold">
-                        <span className={player.kd_vs_chernobyl >= 1 ? 'text-green-400' : 'text-red-400'}>
-                          {player.kd_vs_chernobyl === Infinity ? '∞' : player.kd_vs_chernobyl.toFixed(2)}
-                        </span>
-                      </td>
-                      <td className="p-2 text-center font-semibold">
-                        <span className={player.kd_vs_others >= 1 ? 'text-green-400' : 'text-red-400'}>
-                          {player.kd_vs_others === Infinity ? '∞' : player.kd_vs_others.toFixed(2)}
-                        </span>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                          </td>
+                          <td className="p-2 text-center">
+                            <div className="flex flex-wrap gap-1">
+                              {player.classes_played.slice(0, 3).map((cls, i) => (
+                                <Badge key={i} variant="secondary" className="text-xs">
+                                  {cls.classe}
+                                </Badge>
+                              ))}
+                              {player.classes_played.length > 3 && (
+                                <Badge variant="secondary" className="text-xs">
+                                  +{player.classes_played.length - 3}
+                                </Badge>
+                              )}
+                            </div>
+                          </td>
+                          <td className="p-2 text-center text-green-400 font-medium">{player.total_kills}</td>
+                          <td className="p-2 text-center text-red-400 font-medium">{player.total_deaths}</td>
+                          <td className="p-2 text-center font-semibold">
+                            <span className={player.kd_overall >= 1 ? 'text-green-400' : 'text-red-400'}>
+                              {player.kd_overall === Infinity ? '∞' : player.kd_overall.toFixed(2)}
+                            </span>
+                          </td>
+                          <td className="p-2 text-center font-semibold">
+                            <span className={player.kd_vs_chernobyl >= 1 ? 'text-green-400' : 'text-red-400'}>
+                              {player.kd_vs_chernobyl === Infinity ? '∞' : player.kd_vs_chernobyl.toFixed(2)}
+                            </span>
+                          </td>
+                          <td className="p-2 text-center font-semibold">
+                            <span className={player.kd_vs_others >= 1 ? 'text-green-400' : 'text-red-400'}>
+                              {player.kd_vs_others === Infinity ? '∞' : player.kd_vs_others.toFixed(2)}
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </TabsContent>
+              
+              <TabsContent value="families" className="mt-4">
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between mb-4">
+                    <div className="text-sm text-neutral-400">
+                      Visualização agrupada por família • {(() => {
+                        const filteredFamilies = familyGroupedData.filter(family => {
+                          if (filters.guilda !== 'all' && family.guilda !== filters.guilda) return false
+                          if (filters.familyName && !family.familia.toLowerCase().includes(filters.familyName.toLowerCase())) return false
+                          return true
+                        })
+                        return `${filteredFamilies.length} de ${familyGroupedData.length} famílias`
+                      })()} ativas
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <Input
+                        placeholder="Buscar por nome da família..."
+                        className="w-64 bg-neutral-800 border-neutral-700 text-neutral-200"
+                        value={filters.familyName || ''}
+                        onChange={(e) => setFilters(prev => ({ ...prev, familyName: e.target.value }))}
+                      />
+                      <Select
+                        value={filters.guilda}
+                        onValueChange={(value) => setFilters(prev => ({ ...prev, guilda: value }))}
+                      >
+                        <SelectTrigger className="w-48 bg-neutral-800 border-neutral-700 text-neutral-200">
+                          <SelectValue placeholder="Filtrar por guilda" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="all">Todas as Guildas</SelectItem>
+                          <SelectItem value="Manifest">Manifest</SelectItem>
+                          <SelectItem value="Allyance">Allyance</SelectItem>
+                          <SelectItem value="Grand_Order">Grand_Order</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                  
+                  {familyGroupedData.length > 0 ? (
+                                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                       {familyGroupedData
+                         .filter(family => {
+                           // Filtro por guilda
+                           if (filters.guilda !== 'all' && family.guilda !== filters.guilda) return false
+                           
+                           // Filtro por nome da família
+                           if (filters.familyName && !family.familia.toLowerCase().includes(filters.familyName.toLowerCase())) return false
+                           
+                           return true
+                         })
+                         .map((family, index) => (
+                          <FamilyCard
+                            key={`${family.familia}-${index}`}
+                            familia={family.familia}
+                            guilda={family.guilda}
+                            classes={family.classes}
+                          />
+                        ))}
+                    </div>
+                  ) : (
+                    <div className="text-center py-8 text-neutral-400">
+                      Nenhuma família encontrada com dados de KDA
+                    </div>
+                  )}
+                </div>
+              </TabsContent>
+            </Tabs>
           </CardContent>
         </Card>
       )}
