@@ -12,6 +12,7 @@ import { getRealHistory, getMockHistory, type ProcessedLog } from "@/lib/mock-da
 import { CollapsibleClassItem } from "@/components/shared/collapsible-class-item"
 import { GuildFilterChips } from "@/components/shared/guild-filter-chips"
 import { StatsCard } from "@/components/shared/stats-card"
+import { getGuildBadgeClasses } from "@/lib/guild-colors"
 import {
   FileTextIcon,
   EyeIcon,
@@ -370,10 +371,12 @@ export function HistoryPage() {
       <GuildFilterChips
         allGuilds={allGuilds}
         selectedGuilds={selectedGuilds}
-        onGuildToggle={(guild) => {
-          setSelectedGuilds((prev) =>
-            prev.includes(guild) ? prev.filter((g) => g !== guild) : [...prev, guild]
-          )
+        onGuildToggle={(guild, checked) => {
+          if (checked) {
+            setSelectedGuilds((prev) => [...prev, guild])
+          } else {
+            setSelectedGuilds((prev) => prev.filter((g) => g !== guild))
+          }
         }}
         onClearAll={() => setSelectedGuilds([])}
       />
@@ -413,9 +416,9 @@ export function HistoryPage() {
               return list.map((guildStat) => (
               <div
                 key={guildStat.guild}
-                className="bg-neutral-800 rounded-lg p-4 border border-neutral-700"
+                className={`rounded-lg p-4 border ${getGuildBadgeClasses(guildStat.guild)}`}
               >
-                <h3 className="text-lg font-semibold text-neutral-100 mb-3">{guildStat.guild}</h3>
+                <h3 className="text-lg font-semibold mb-3">{guildStat.guild}</h3>
                 <div className="space-y-2 text-sm">
                   <div className="flex justify-between">
                     <span className="text-neutral-400">Registros:</span>
@@ -501,7 +504,7 @@ export function HistoryPage() {
               {/* Guild Summary */}
               <div className="flex flex-wrap gap-2">
                 {dayStat.guilds.map((guild) => (
-                  <Badge key={guild} variant="outline" className="border-neutral-700 text-neutral-300">
+                  <Badge key={guild} variant="outline" className={`${getGuildBadgeClasses(guild)}`}>
                     {guild}
                   </Badge>
                 ))}
@@ -519,8 +522,8 @@ export function HistoryPage() {
                       </h4>
                       <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
                         {Object.entries(dayStat.killStats).map(([guild, kills]) => (
-                          <div key={guild} className="bg-neutral-800 rounded p-3">
-                            <div className="text-sm text-neutral-400">{guild}</div>
+                          <div key={guild} className={`rounded p-3 ${getGuildBadgeClasses(guild)}`}>
+                            <div className="text-sm font-medium">{guild}</div>
                             <div className="text-lg font-semibold text-green-400">{kills}</div>
                           </div>
                         ))}
@@ -537,8 +540,8 @@ export function HistoryPage() {
                       </h4>
                       <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
                         {Object.entries(dayStat.deathStats).map(([guild, deaths]) => (
-                          <div key={guild} className="bg-neutral-800 rounded p-3">
-                            <div className="text-sm text-neutral-400">{guild}</div>
+                          <div key={guild} className={`rounded p-3 ${getGuildBadgeClasses(guild)}`}>
+                            <div className="text-sm font-medium">{guild}</div>
                             <div className="text-lg font-semibold text-red-400">{deaths}</div>
                           </div>
                         ))}
@@ -555,8 +558,8 @@ export function HistoryPage() {
                       </h4>
                       <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
                         {Object.entries(dayStat.kdStats).map(([guild, kd]) => (
-                          <div key={guild} className="bg-neutral-800 rounded p-3">
-                            <div className="text-sm text-neutral-400">{guild}</div>
+                          <div key={guild} className={`rounded p-3 ${getGuildBadgeClasses(guild)}`}>
+                            <div className="text-sm font-medium">{guild}</div>
                             <div className={`text-lg font-semibold ${kd >= 1 ? 'text-green-400' : 'text-red-400'}`}>
                               {kd.toFixed(2)}
                             </div>
@@ -576,7 +579,7 @@ export function HistoryPage() {
                             <tr className="border-b border-neutral-700">
                               <th className="text-left p-2 text-neutral-400">Killer</th>
                               {dayStat.killsMatrix && Object.keys(dayStat.killsMatrix).map((guild) => (
-                                <th key={guild} className="text-center p-2 text-neutral-400">
+                                <th key={guild} className={`text-center p-2 ${getGuildBadgeClasses(guild)}`}>
                                   {guild}
                                 </th>
                               ))}
@@ -585,7 +588,7 @@ export function HistoryPage() {
                           <tbody>
                             {dayStat.killsMatrix && Object.entries(dayStat.killsMatrix).map(([killer, victims]) => (
                               <tr key={killer} className="border-b border-neutral-800">
-                                <td className="p-2 text-neutral-300 font-medium">{killer}</td>
+                                <td className={`p-2 font-medium ${getGuildBadgeClasses(killer)}`}>{killer}</td>
                                 {dayStat.killsMatrix && Object.keys(dayStat.killsMatrix).map((victim) => (
                                   <td key={victim} className="text-center p-2">
                                     <span className="text-neutral-200">
@@ -1059,14 +1062,14 @@ export function HistoryPage() {
                                 <tr className="border-b border-neutral-700">
                                   <th className="text-left p-2 text-neutral-400">Killer</th>
                                   {Object.keys(processedData.kills_matrix).map((g:string)=> (
-                                    <th key={g} className="text-center p-2 text-neutral-400">{g}</th>
+                                    <th key={g} className={`text-center p-2 ${getGuildBadgeClasses(g)}`}>{g}</th>
                                   ))}
                                 </tr>
                               </thead>
                               <tbody>
                                 {Object.entries(processedData.kills_matrix).map(([killer, victims]: any) => (
                                   <tr key={killer} className="border-b border-neutral-800">
-                                    <td className="p-2 text-neutral-300 font-medium">{killer}</td>
+                                    <td className={`p-2 font-medium ${getGuildBadgeClasses(killer)}`}>{killer}</td>
                                     {Object.keys(processedData.kills_matrix).map((victim:string)=> (
                                       <td key={victim} className="text-center p-2 text-neutral-200">{victims[victim] || 0}</td>
                                     ))}
@@ -1127,19 +1130,14 @@ export function HistoryPage() {
                               
                               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                                 {sortedGuilds.map(([guildName, stats]) => (
-                                  <Card key={guildName} className="border-neutral-700 bg-neutral-800">
+                                  <Card key={guildName} className={`border bg-neutral-800 ${getGuildBadgeClasses(guildName)}`}>
                                     <CardHeader className="pb-3">
-                                      <CardTitle className="text-neutral-200 text-base flex items-center justify-between">
+                                      <CardTitle className="text-base flex items-center justify-between">
                                         <span className="flex items-center gap-2">
                                           <UsersIcon className="h-4 w-4 text-blue-400" />
                                           {guildName}
                                         </span>
-                                        <Badge variant="outline" className={
-                                          guildName === 'Manifest' ? 'border-blue-700 text-blue-300' :
-                                          guildName === 'Allyance' ? 'border-green-700 text-green-300' :
-                                          guildName === 'Grand_Order' ? 'border-purple-700 text-purple-300' :
-                                          'border-yellow-700 text-yellow-300'
-                                        }>
+                                        <Badge variant="outline" className="border-neutral-600 text-neutral-300 bg-neutral-800">
                                           {stats.players} jogadores
                                         </Badge>
                                       </CardTitle>
@@ -1167,45 +1165,6 @@ export function HistoryPage() {
                                   </Card>
                                 ))}
                               </div>
-                              
-                              {/* Resumo geral */}
-                              <Card className="border-neutral-700 bg-neutral-800">
-                                <CardHeader className="pb-3">
-                                  <CardTitle className="text-neutral-200 text-base flex items-center gap-2">
-                                    <TrendingUpIcon className="h-4 w-4 text-green-400" />
-                                    Resumo Geral da Aliança
-                                  </CardTitle>
-                                </CardHeader>
-                                <CardContent>
-                                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                                    <div className="text-center p-3 bg-neutral-700 rounded border border-neutral-600">
-                                      <div className="text-lg font-bold text-green-400">
-                                        {Object.values(guildStats).reduce((sum, s) => sum + s.kills, 0)}
-                                      </div>
-                                      <div className="text-xs text-neutral-400">Total Kills</div>
-                                    </div>
-                                    <div className="text-center p-3 bg-neutral-700 rounded border border-neutral-600">
-                                      <div className="text-lg font-bold text-red-400">
-                                        {Object.values(guildStats).reduce((sum, s) => sum + s.deaths, 0)}
-                                      </div>
-                                      <div className="text-xs text-neutral-400">Total Deaths</div>
-                                    </div>
-                                    <div className="text-center p-3 bg-neutral-700 rounded border border-neutral-600">
-                                      <div className="text-lg font-bold text-blue-400">
-                                        {(() => {
-                                          const totalKills = Object.values(guildStats).reduce((sum, s) => sum + s.kills, 0)
-                                          const totalDeaths = Object.values(guildStats).reduce((sum, s) => sum + s.deaths, 0)
-                                          if (totalDeaths > 0) {
-                                            return (totalKills / totalDeaths).toFixed(2)
-                                          }
-                                          return totalKills > 0 ? '∞' : '0.00'
-                                        })()}
-                                      </div>
-                                      <div className="text-xs text-neutral-400">K/D Geral</div>
-                                    </div>
-                                  </div>
-                                </CardContent>
-                              </Card>
                             </div>
                           )
                         })()}

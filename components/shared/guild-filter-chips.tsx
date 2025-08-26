@@ -4,6 +4,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { XIcon } from "lucide-react"
+import { getGuildBadgeClasses } from "@/lib/guild-colors"
 
 interface GuildFilterChipsProps {
   allGuilds: string[]
@@ -41,7 +42,7 @@ export function GuildFilterChips({ allGuilds, selectedGuilds, onGuildToggle, onC
               <Badge
                 key={guild}
                 variant="secondary"
-                className="bg-blue-900 text-blue-200 border-blue-700 hover:bg-blue-800 transition-colors cursor-pointer"
+                className={`${getGuildBadgeClasses(guild)} transition-colors cursor-pointer`}
                 onClick={() => onGuildToggle(guild, false)}
               >
                 {guild}

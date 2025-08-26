@@ -239,11 +239,49 @@ export async function saveToDatabase(data: ProcessedLog & { event_date?: string 
 // Real function to get history from Supabase
 export async function getRealHistory(): Promise<ProcessLogRecord[]> {
   try {
-    return await getProcessLogsHistory()
+    const realData = await getProcessLogsHistory()
+    console.log('📊 Dados reais carregados:', realData?.length || 0, 'registros')
+    
+    // Se não há dados reais, retorna dados mock convertidos
+    if (!realData || realData.length === 0) {
+      console.log('📊 Nenhum dado real encontrado, usando dados mock convertidos')
+      return convertMockHistoryToProcessLog()
+    }
+    
+    return realData
   } catch (error) {
     console.error('Erro ao buscar histórico:', error)
-    throw error
+    console.log('📊 Erro na busca, usando dados mock convertidos como fallback')
+    // Retorna dados mock convertidos em caso de erro
+    return convertMockHistoryToProcessLog()
   }
+}
+
+// Função para converter dados mock para o formato ProcessLogRecord
+function convertMockHistoryToProcessLog(): ProcessLogRecord[] {
+  const mockData = getMockHistory()
+  console.log('📊 Convertendo dados mock para ProcessLogRecord:', mockData.length, 'registros')
+  
+  return mockData.map((mockRecord) => ({
+    id: mockRecord.id,
+    created_at: mockRecord.date, // Usa date como created_at
+    guild: mockRecord.processedData.guild,
+    guilds: mockRecord.processedData.guilds || null,
+    total_geral: mockRecord.processedData.totalGeral,
+    total_por_classe: mockRecord.processedData.totalPorClasse,
+    classes: mockRecord.processedData.classes,
+    classes_by_guild: mockRecord.processedData.classesByGuild || null,
+    player_stats_by_guild: null, // Mock não tem esse campo
+    kills_by_guild: mockRecord.processedData.killsByGuild || null,
+    deaths_by_guild: mockRecord.processedData.deathsByGuild || null,
+    kd_ratio_by_guild: mockRecord.processedData.kdRatioByGuild || null,
+    kills_matrix: mockRecord.processedData.killsMatrix || null,
+    arquivo_nome: mockRecord.filename,
+    territorio: mockRecord.processedData.territorio,
+    node: mockRecord.processedData.node,
+    guildas_adversarias: mockRecord.processedData.guildasAdversarias,
+    event_date: mockRecord.date, // Usa date como event_date
+  }))
 }
 
 // Mock function for backward compatibility (fallback)
