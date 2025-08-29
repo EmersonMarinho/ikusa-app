@@ -1,0 +1,626 @@
+"use client"
+
+import { useState, useEffect } from "react"
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
+import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { Progress } from "@/components/ui/progress"
+import { Badge } from "@/components/ui/badge"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { 
+  Trophy, 
+  Users, 
+  TrendingUp, 
+  Search, 
+  Filter, 
+  RefreshCw,
+  BarChart3,
+  History,
+  Crown,
+  Sword,
+  Shield,
+  UploadIcon,
+  FileTextIcon,
+  CheckCircleIcon,
+  AlertCircleIcon
+} from "lucide-react"
+
+// Interfaces
+interface PlayerGearscore {
+  id: number
+  user_id: string
+  family_name: string
+  character_name: string
+  main_class: string
+  ap: number
+  aap: number
+  dp: number
+  gearscore: number
+  link_gear?: string
+  created_at: string
+  last_updated: string
+}
+
+interface GuildStats {
+  total_players: number
+  average_gearscore: number
+  top_players: PlayerGearscore[]
+  class_distribution: Record<string, number>
+  gearscore_ranges: {
+    '700-750': number
+    '751-800': number
+    '801-850': number
+    '851-900': number
+  }
+}
+
+interface GearscoreHistory {
+  id: number
+  user_id: string
+  ap: number
+  aap: number
+  dp: number
+  gearscore: number
+  recorded_at: string
+}
+
+export function GearscorePageComponent() {
+  const [players, setPlayers] = useState<PlayerGearscore[]>([])
+  const [stats, setStats] = useState<GuildStats | null>(null)
+  const [history, setHistory] = useState<GearscoreHistory[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [searchTerm, setSearchTerm] = useState("")
+  const [sortBy, setSortBy] = useState("gearscore")
+  const [sortOrder, setSortOrder] = useState("desc")
+  const [limit] = useState(0) // Sem limite - mostra todos os players
+  const [selectedPlayer, setSelectedPlayer] = useState<PlayerGearscore | null>(null)
+  
+  // Estados para upload de gearscore
+  const [uploadFile, setUploadFile] = useState<File | null>(null)
+  const [isUploading, setIsUploading] = useState(false)
+  const [uploadSuccess, setUploadSuccess] = useState(false)
+  const [uploadError, setUploadError] = useState<string | null>(null)
+
+  // Busca dados dos players
+  const fetchPlayers = async () => {
+    try {
+      setLoading(true)
+      setError(null)
+      
+      const params = new URLSearchParams({
+        guild: 'lollipop',
+        limit: limit.toString(),
+        sortBy,
+        order: sortOrder
+      })
+
+      const response = await fetch(`/api/players-gearscore?${params}`)
+      const data = await response.json()
+
+      if (data.success) {
+        setPlayers(data.data.players)
+        setStats(data.data.stats)
+      } else {
+        setError(data.error || 'Erro ao buscar dados')
+      }
+    } catch (err) {
+      console.error('Erro ao buscar dados:', err)
+      setError('Erro ao buscar dados dos players')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  // Funções para upload de gearscore
+  const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const selectedFile = event.target.files?.[0]
+    if (selectedFile && selectedFile.name.endsWith('.json')) {
+      setUploadFile(selectedFile)
+      setUploadSuccess(false)
+      setUploadError(null)
+    }
+  }
+
+  const handleUpload = async () => {
+    if (!uploadFile) return
+
+    setIsUploading(true)
+    setUploadError(null)
+    
+    try {
+      const formData = new FormData()
+      formData.append('file', uploadFile)
+      formData.append('guild', 'lollipop')
+
+      const response = await fetch('/api/players-gearscore', {
+        method: 'POST',
+        body: formData
+      })
+
+      const data = await response.json()
+
+      if (data.success) {
+        setUploadSuccess(true)
+        setUploadFile(null)
+        // Recarrega os dados após upload bem-sucedido
+        await fetchPlayers()
+      } else {
+        setUploadError(data.error || 'Erro ao fazer upload do arquivo')
+      }
+    } catch (error) {
+      console.error('Erro no upload:', error)
+      setUploadError('Erro ao fazer upload do arquivo')
+    } finally {
+      setIsUploading(false)
+    }
+  }
+
+  // Busca histórico de um player
+  const fetchPlayerHistory = async (userId: string) => {
+    try {
+      const params = new URLSearchParams({
+        guild: 'lollipop',
+        history: 'true',
+        userId
+      })
+
+      const response = await fetch(`/api/players-gearscore?${params}`)
+      const data = await response.json()
+
+      if (data.success && data.data.history) {
+        setHistory(data.data.history)
+      }
+    } catch (err) {
+      console.error('Erro ao buscar histórico:', err)
+    }
+  }
+
+  // Carrega dados iniciais
+  useEffect(() => {
+    fetchPlayers()
+  }, [sortBy, sortOrder, limit])
+
+  // Filtra players baseado no termo de busca
+  const filteredPlayers = players.filter(player =>
+    player.family_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    player.character_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    player.main_class.toLowerCase().includes(searchTerm.toLowerCase())
+  )
+
+  // Funções auxiliares
+  const formatDate = (dateString: string) => {
+    return new Date(dateString).toLocaleDateString('pt-BR')
+  }
+
+  const getGearscoreColor = (gs: number) => {
+    if (gs >= 900) return "text-purple-600 font-bold"
+    if (gs >= 850) return "text-red-600 font-semibold"
+    if (gs >= 800) return "text-orange-600 font-semibold"
+    if (gs >= 750) return "text-yellow-600"
+    return "text-green-600"
+  }
+
+  const getClassColor = (className: string) => {
+    const colors: Record<string, string> = {
+      'Dosa': 'bg-blue-100 text-blue-800',
+      'Striker': 'bg-red-100 text-red-800',
+      'Ranger': 'bg-green-100 text-green-800',
+      'Shai': 'bg-purple-100 text-purple-800',
+      'Ninja': 'bg-gray-100 text-gray-800',
+      'Berserker': 'bg-orange-100 text-orange-800',
+      'Arqueiro': 'bg-yellow-100 text-yellow-800',
+      'Tamer': 'bg-pink-100 text-pink-800',
+      'Megu': 'bg-indigo-100 text-indigo-800',
+      'Mistica': 'bg-teal-100 text-teal-800',
+      'Wusa': 'bg-cyan-100 text-cyan-800',
+      'Musah': 'bg-lime-100 text-lime-800',
+      'Feiticeira': 'bg-violet-100 text-violet-800',
+      'Bruxa': 'bg-rose-100 text-rose-800',
+      'Deadeye': 'bg-slate-100 text-slate-800',
+      'Corsaria': 'bg-amber-100 text-amber-800',
+      'Lahn': 'bg-emerald-100 text-emerald-800',
+      'Guardian': 'bg-sky-100 text-sky-800',
+      'Hashashin': 'bg-fuchsia-100 text-fuchsia-800',
+      'Kunoichi': 'bg-stone-100 text-stone-800',
+      'Sage': 'bg-zinc-100 text-zinc-800',
+      'Warrior': 'bg-neutral-100 text-neutral-800',
+      'Nova': 'bg-slate-100 text-slate-800',
+      'Drakania': 'bg-rose-100 text-rose-800'
+    }
+    return colors[className] || 'bg-gray-100 text-gray-800'
+  }
+
+  if (loading && players.length === 0) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="text-center">
+          <RefreshCw className="h-8 w-8 animate-spin mx-auto mb-4" />
+          <p>Carregando ranking de gearscore...</p>
+        </div>
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <div className="container mx-auto p-6">
+        <div className="text-center">
+          <p className="text-red-600 mb-4">{error}</p>
+          <Button onClick={fetchPlayers}>Tentar novamente</Button>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="container mx-auto p-6 space-y-6">
+      {/* Header */}
+      <div className="text-center space-y-2">
+        <h1 className="text-4xl font-bold text-primary flex items-center justify-center gap-3">
+          <Trophy className="h-10 w-10" />
+          Ranking de Gearscore
+        </h1>
+        <p className="text-muted-foreground">
+          Acompanhe a evolução do poder dos players da Lollipop
+        </p>
+      </div>
+
+      {/* Upload de Gearscore */}
+      <Card className="border-2 border-dashed border-muted-foreground/25 hover:border-muted-foreground/50 transition-colors">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-primary">
+            <UploadIcon className="h-5 w-5" />
+            Upload de Dados de Gearscore
+          </CardTitle>
+          <CardDescription>
+            Faça upload de um arquivo JSON com dados de gearscore dos players
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex items-center space-x-4">
+            <Input
+              type="file"
+              accept=".json"
+              onChange={handleFileChange}
+              className="flex-1"
+              placeholder="Selecione um arquivo JSON"
+            />
+            <Button
+              onClick={handleUpload}
+              disabled={!uploadFile || isUploading}
+              className="min-w-[120px]"
+            >
+              {isUploading ? (
+                <>
+                  <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                  Enviando...
+                </>
+              ) : (
+                <>
+                  <UploadIcon className="h-4 w-4 mr-2" />
+                  Enviar
+                </>
+              )}
+            </Button>
+          </div>
+          
+          {uploadFile && (
+            <div className="flex items-center space-x-2 text-sm text-muted-foreground">
+              <FileTextIcon className="h-4 w-4" />
+              <span>{uploadFile.name}</span>
+              <Badge variant="outline">
+                {(uploadFile.size / 1024).toFixed(1)} KB
+              </Badge>
+            </div>
+          )}
+
+          {uploadSuccess && (
+            <div className="flex items-center space-x-2 text-sm text-green-600">
+              <CheckCircleIcon className="h-4 w-4" />
+              <span>Upload realizado com sucesso! Dados atualizados.</span>
+            </div>
+          )}
+
+          {uploadError && (
+            <div className="flex items-center space-x-2 text-sm text-red-600">
+              <AlertCircleIcon className="h-4 w-4" />
+              <span>{uploadError}</span>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Cards de Estatísticas */}
+      {stats && (
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Total de Players</CardTitle>
+              <Users className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">{stats.total_players}</div>
+              <p className="text-xs text-muted-foreground mt-1">
+                Desconsiderando Shai e Defesa
+              </p>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">GS Médio</CardTitle>
+              <TrendingUp className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">{stats.average_gearscore}</div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Top GS</CardTitle>
+              <Crown className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">
+                {stats.top_players[0]?.gearscore || 0}
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Última Atualização</CardTitle>
+              <History className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-sm text-muted-foreground">
+                {players[0] ? formatDate(players[0].last_updated) : 'N/A'}
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {/* Distribuição de Gearscore */}
+      {stats && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <BarChart3 className="h-5 w-5" />
+              Distribuição por Faixa de Gearscore
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {Object.entries(stats.gearscore_ranges).map(([range, count]) => (
+              <div key={range} className="space-y-2">
+                <div className="flex justify-between text-sm">
+                  <span className="font-medium">{range}</span>
+                  <span className="text-muted-foreground">{count} players</span>
+                </div>
+                <Progress 
+                  value={(count / stats.total_players) * 100} 
+                  className="h-2"
+                />
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Filtros e Controles */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Filter className="h-5 w-5" />
+            Filtros e Controles
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="flex flex-col md:flex-row gap-4">
+            <div className="flex-1">
+              <div className="relative">
+                <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+                <Input
+                  placeholder="Buscar por nome, família ou classe..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="pl-10"
+                />
+              </div>
+            </div>
+
+            <Select value={sortBy} onValueChange={setSortBy}>
+              <SelectTrigger className="w-48">
+                <SelectValue placeholder="Ordenar por" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="gearscore">Gearscore</SelectItem>
+                <SelectItem value="family_name">Família</SelectItem>
+                <SelectItem value="main_class">Classe</SelectItem>
+                <SelectItem value="ap">AP</SelectItem>
+                <SelectItem value="aap">AAP</SelectItem>
+                <SelectItem value="dp">DP</SelectItem>
+              </SelectContent>
+            </Select>
+
+            <Select value={sortOrder} onValueChange={setSortOrder}>
+              <SelectTrigger className="w-32">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="desc">Decrescente</SelectItem>
+                <SelectItem value="asc">Crescente</SelectItem>
+              </SelectContent>
+            </Select>
+
+            <Button onClick={fetchPlayers} variant="outline">
+              <RefreshCw className="h-4 w-4 mr-2" />
+              Atualizar
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Tabela de Players */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Sword className="h-5 w-5" />
+            Ranking de Players ({filteredPlayers.length})
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="rounded-md border">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="w-12">#</TableHead>
+                  <TableHead>Player</TableHead>
+                  <TableHead>Classe</TableHead>
+                  <TableHead className="text-center">AP</TableHead>
+                  <TableHead className="text-center">AAP</TableHead>
+                  <TableHead className="text-center">DP</TableHead>
+                  <TableHead className="text-center font-bold">GS</TableHead>
+                  <TableHead className="text-center">Última Atualização</TableHead>
+                  <TableHead className="text-center">Ações</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {filteredPlayers.map((player, index) => (
+                  <TableRow key={player.id} className="hover:bg-muted/50">
+                    <TableCell className="font-medium text-center">
+                      {index + 1}
+                    </TableCell>
+                    <TableCell>
+                      <div>
+                        <div className="font-medium">{player.family_name}</div>
+                        <div className="text-sm text-muted-foreground">
+                          {player.character_name}
+                        </div>
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <Badge className={getClassColor(player.main_class)}>
+                        {player.main_class}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="text-center font-mono">
+                      {player.ap}
+                    </TableCell>
+                    <TableCell className="text-center font-mono">
+                      {player.aap}
+                    </TableCell>
+                    <TableCell className="text-center font-mono">
+                      {player.dp}
+                    </TableCell>
+                    <TableCell className="text-center">
+                      <span className={`font-bold text-lg ${getGearscoreColor(player.gearscore)}`}>
+                        {player.gearscore}
+                      </span>
+                    </TableCell>
+                    <TableCell className="text-center text-sm text-muted-foreground">
+                      {formatDate(player.last_updated)}
+                    </TableCell>
+                    <TableCell className="text-center">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          setSelectedPlayer(player)
+                          fetchPlayerHistory(player.user_id)
+                        }}
+                      >
+                        <History className="h-4 w-4 mr-1" />
+                        Histórico
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Modal de Histórico */}
+      {selectedPlayer && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+          <div className="bg-background rounded-lg p-6 max-w-2xl w-full max-h-[80vh] overflow-y-auto">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold">
+                Histórico de Gearscore - {selectedPlayer.family_name}
+              </h3>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setSelectedPlayer(null)}
+              >
+                ✕
+              </Button>
+            </div>
+
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <div className="text-center">
+                  <div className="text-2xl font-bold text-blue-600">{selectedPlayer.ap}</div>
+                  <div className="text-sm text-muted-foreground">AP</div>
+                </div>
+                <div className="text-center">
+                  <div className="text-2xl font-bold text-green-600">{selectedPlayer.aap}</div>
+                  <div className="text-sm text-muted-foreground">AAP</div>
+                </div>
+                <div className="text-center">
+                  <div className="text-2xl font-bold text-red-600">{selectedPlayer.dp}</div>
+                  <div className="text-sm text-muted-foreground">DP</div>
+                </div>
+                <div className="text-center">
+                  <div className={`text-2xl font-bold ${getGearscoreColor(selectedPlayer.gearscore)}`}>
+                    {selectedPlayer.gearscore}
+                  </div>
+                  <div className="text-sm text-muted-foreground">GS Total</div>
+                </div>
+              </div>
+
+              {history.length > 0 && (
+                <div>
+                  <h4 className="font-medium mb-2">Evolução do Gearscore</h4>
+                  <div className="space-y-2">
+                    {history.map((entry) => (
+                      <div key={entry.id} className="flex items-center justify-between p-2 bg-muted rounded">
+                        <div className="flex items-center gap-4">
+                          <span className="text-sm text-muted-foreground">
+                            {formatDate(entry.recorded_at)}
+                          </span>
+                          <span className="font-mono">
+                            AP: {entry.ap} | AAP: {entry.aap} | DP: {entry.dp}
+                          </span>
+                        </div>
+                        <span className={`font-bold ${getGearscoreColor(entry.gearscore)}`}>
+                          {entry.gearscore}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {selectedPlayer.link_gear && (
+                <div className="text-center">
+                  <Button asChild>
+                    <a href={selectedPlayer.link_gear} target="_blank" rel="noopener noreferrer">
+                      Ver Gear no Garmoth
+                    </a>
+                  </Button>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}

@@ -9,6 +9,7 @@ const navigation = [
   { name: "Histórico", href: "/history" },
   { name: "Comparar", href: "/compare" },
   { name: "KDA Mensal", href: "/kda-mensal" },
+  { name: "Gearscore", href: "/gearscore" },
 ]
 
 export function Header() {
