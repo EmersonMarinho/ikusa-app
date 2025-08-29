@@ -16,8 +16,6 @@ import {
   Search, 
   Filter, 
   RefreshCw,
-  BarChart3,
-  History,
   Crown,
   Sword,
   Shield,
@@ -26,6 +24,7 @@ import {
   CheckCircleIcon,
   AlertCircleIcon
 } from "lucide-react"
+import { Label } from "@/components/ui/label"
 
 // Interfaces
 interface PlayerGearscore {
@@ -333,216 +332,267 @@ export function GearscorePageComponent() {
         </CardContent>
       </Card>
 
-      {/* Cards de Estatísticas */}
-      {stats && (
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Total de Players</CardTitle>
-              <Users className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{stats.total_players}</div>
-              <p className="text-xs text-muted-foreground mt-1">
-                Desconsiderando Shai e Defesa
-              </p>
-            </CardContent>
-          </Card>
+      {/* Abas de Navegação */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <TrendingUp className="h-5 w-5" />
+            Estatísticas de Gearscore
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <Tabs defaultValue="ranking" className="w-full">
+            <TabsList className="grid w-full grid-cols-1">
+              <TabsTrigger value="ranking">Ranking Geral</TabsTrigger>
+            </TabsList>
+            
+            <TabsContent value="ranking" className="space-y-6">
+              {/* Conteúdo do Ranking Geral */}
+              {/* Cards de Estatísticas */}
+              {stats && (
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                  <Card>
+                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                      <CardTitle className="text-sm font-medium">Total de Players</CardTitle>
+                      <Users className="h-4 w-4 text-muted-foreground" />
+                    </CardHeader>
+                    <CardContent>
+                      <div className="text-2xl font-bold">{stats.total_players}</div>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Desconsiderando Shai e Defesa
+                      </p>
+                    </CardContent>
+                  </Card>
 
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">GS Médio</CardTitle>
-              <TrendingUp className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{stats.average_gearscore}</div>
-            </CardContent>
-          </Card>
+                  <Card>
+                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                      <CardTitle className="text-sm font-medium">GS Médio</CardTitle>
+                      <TrendingUp className="h-4 w-4 text-muted-foreground" />
+                    </CardHeader>
+                    <CardContent>
+                      <div className="text-2xl font-bold">{stats.average_gearscore}</div>
+                    </CardContent>
+                  </Card>
 
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Top GS</CardTitle>
-              <Crown className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">
-                {stats.top_players[0]?.gearscore || 0}
-              </div>
-            </CardContent>
-          </Card>
+                  <Card>
+                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                      <CardTitle className="text-sm font-medium">Top GS</CardTitle>
+                      <Crown className="h-4 w-4 text-muted-foreground" />
+                    </CardHeader>
+                    <CardContent>
+                      <div className="text-2xl font-bold">
+                        {stats.top_players[0]?.gearscore || 0}
+                      </div>
+                    </CardContent>
+                  </Card>
 
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Última Atualização</CardTitle>
-              <History className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-sm text-muted-foreground">
-                {players[0] ? formatDate(players[0].last_updated) : 'N/A'}
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-      )}
-
-      {/* Distribuição de Gearscore */}
-      {stats && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <BarChart3 className="h-5 w-5" />
-              Distribuição por Faixa de Gearscore
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            {Object.entries(stats.gearscore_ranges).map(([range, count]) => (
-              <div key={range} className="space-y-2">
-                <div className="flex justify-between text-sm">
-                  <span className="font-medium">{range}</span>
-                  <span className="text-muted-foreground">{count} players</span>
+                  <Card>
+                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                      <CardTitle className="text-sm font-medium">Última Atualização</CardTitle>
+                      <TrendingUp className="h-4 w-4 text-muted-foreground" />
+                    </CardHeader>
+                    <CardContent>
+                      <div className="text-sm text-muted-foreground">
+                        {players[0] ? formatDate(players[0].last_updated) : 'N/A'}
+                      </div>
+                    </CardContent>
+                  </Card>
                 </div>
-                <Progress 
-                  value={(count / stats.total_players) * 100} 
-                  className="h-2"
-                />
-              </div>
-            ))}
-          </CardContent>
-        </Card>
-      )}
+              )}
 
-      {/* Filtros e Controles */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Filter className="h-5 w-5" />
-            Filtros e Controles
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="flex flex-col md:flex-row gap-4">
-            <div className="flex-1">
-              <div className="relative">
-                <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-                <Input
-                  placeholder="Buscar por nome, família ou classe..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="pl-10"
-                />
-              </div>
-            </div>
+              {/* Distribuição de Gearscore */}
+              {stats && (
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                      <TrendingUp className="h-5 w-5" />
+                      Distribuição de Gearscore
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    {Object.entries(stats.gearscore_ranges).map(([range, count]) => (
+                      <div key={range} className="space-y-2">
+                        <div className="flex justify-between text-sm">
+                          <span className="font-medium">{range}</span>
+                          <span className="text-muted-foreground">{count} players</span>
+                        </div>
+                        <Progress 
+                          value={(count / stats.total_players) * 100} 
+                          className="h-2"
+                        />
+                      </div>
+                    ))}
+                  </CardContent>
+                </Card>
+              )}
 
-            <Select value={sortBy} onValueChange={setSortBy}>
-              <SelectTrigger className="w-48">
-                <SelectValue placeholder="Ordenar por" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="gearscore">Gearscore</SelectItem>
-                <SelectItem value="family_name">Família</SelectItem>
-                <SelectItem value="main_class">Classe</SelectItem>
-                <SelectItem value="ap">AP</SelectItem>
-                <SelectItem value="aap">AAP</SelectItem>
-                <SelectItem value="dp">DP</SelectItem>
-              </SelectContent>
-            </Select>
-
-            <Select value={sortOrder} onValueChange={setSortOrder}>
-              <SelectTrigger className="w-32">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="desc">Decrescente</SelectItem>
-                <SelectItem value="asc">Crescente</SelectItem>
-              </SelectContent>
-            </Select>
-
-            <Button onClick={fetchPlayers} variant="outline">
-              <RefreshCw className="h-4 w-4 mr-2" />
-              Atualizar
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Tabela de Players */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Sword className="h-5 w-5" />
-            Ranking de Players ({filteredPlayers.length})
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="rounded-md border">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="w-12">#</TableHead>
-                  <TableHead>Player</TableHead>
-                  <TableHead>Classe</TableHead>
-                  <TableHead className="text-center">AP</TableHead>
-                  <TableHead className="text-center">AAP</TableHead>
-                  <TableHead className="text-center">DP</TableHead>
-                  <TableHead className="text-center font-bold">GS</TableHead>
-                  <TableHead className="text-center">Última Atualização</TableHead>
-                  <TableHead className="text-center">Ações</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {filteredPlayers.map((player, index) => (
-                  <TableRow key={player.id} className="hover:bg-muted/50">
-                    <TableCell className="font-medium text-center">
-                      {index + 1}
-                    </TableCell>
-                    <TableCell>
-                      <div>
-                        <div className="font-medium">{player.family_name}</div>
-                        <div className="text-sm text-muted-foreground">
-                          {player.character_name}
+              {/* Top Players */}
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <Crown className="h-5 w-5" />
+                    Top Players
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-3">
+                    {stats?.top_players.slice(0, 10).map((player, index) => (
+                      <div key={player.id} className="flex items-center justify-between p-3 bg-muted rounded-lg">
+                        <div className="flex items-center gap-3">
+                          <div className="w-8 h-8 bg-primary text-primary-foreground rounded-full flex items-center justify-center text-sm font-bold">
+                            {index + 1}
+                          </div>
+                          <div>
+                            <div className="font-medium">{player.family_name}</div>
+                            <div className="text-sm text-muted-foreground">{player.character_name}</div>
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          <div className="font-bold text-lg">{player.gearscore}</div>
+                          <div className="text-sm text-muted-foreground">
+                            AP: {player.ap} | DP: {player.dp}
+                          </div>
                         </div>
                       </div>
-                    </TableCell>
-                    <TableCell>
-                      <Badge className={getClassColor(player.main_class)}>
-                        {player.main_class}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="text-center font-mono">
-                      {player.ap}
-                    </TableCell>
-                    <TableCell className="text-center font-mono">
-                      {player.aap}
-                    </TableCell>
-                    <TableCell className="text-center font-mono">
-                      {player.dp}
-                    </TableCell>
-                    <TableCell className="text-center">
-                      <span className={`font-bold text-lg ${getGearscoreColor(player.gearscore)}`}>
-                        {player.gearscore}
-                      </span>
-                    </TableCell>
-                    <TableCell className="text-center text-sm text-muted-foreground">
-                      {formatDate(player.last_updated)}
-                    </TableCell>
-                    <TableCell className="text-center">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => {
-                          setSelectedPlayer(player)
-                          fetchPlayerHistory(player.user_id)
-                        }}
-                      >
-                        <History className="h-4 w-4 mr-1" />
-                        Histórico
-                      </Button>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Filtros e Controles */}
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <Filter className="h-5 w-5" />
+                    Filtros e Controles
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="flex flex-col md:flex-row gap-4">
+                    <div className="flex-1">
+                      <div className="relative">
+                        <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+                        <Input
+                          placeholder="Buscar por nome, família ou classe..."
+                          value={searchTerm}
+                          onChange={(e) => setSearchTerm(e.target.value)}
+                          className="pl-10"
+                        />
+                      </div>
+                    </div>
+
+                    <Select value={sortBy} onValueChange={setSortBy}>
+                      <SelectTrigger className="w-48">
+                        <SelectValue placeholder="Ordenar por" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="gearscore">Gearscore</SelectItem>
+                        <SelectItem value="family_name">Família</SelectItem>
+                        <SelectItem value="main_class">Classe</SelectItem>
+                        <SelectItem value="ap">AP</SelectItem>
+                        <SelectItem value="aap">AAP</SelectItem>
+                        <SelectItem value="dp">DP</SelectItem>
+                      </SelectContent>
+                    </Select>
+
+                    <Select value={sortOrder} onValueChange={setSortOrder}>
+                      <SelectTrigger className="w-32">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="desc">Decrescente</SelectItem>
+                        <SelectItem value="asc">Crescente</SelectItem>
+                      </SelectContent>
+                    </Select>
+
+                    <Button onClick={fetchPlayers} variant="outline">
+                      <RefreshCw className="h-4 w-4 mr-2" />
+                      Atualizar
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Tabela de Players */}
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <Sword className="h-5 w-5" />
+                    Ranking de Players ({filteredPlayers.length})
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="rounded-md border">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead className="w-12">#</TableHead>
+                          <TableHead>Player</TableHead>
+                          <TableHead>Classe</TableHead>
+                          <TableHead className="text-center">AP</TableHead>
+                          <TableHead className="text-center">AAP</TableHead>
+                          <TableHead className="text-center">DP</TableHead>
+                          <TableHead className="text-center font-bold">GS</TableHead>
+                          <TableHead className="text-center">Última Atualização</TableHead>
+                          <TableHead className="text-center">Ações</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {filteredPlayers.map((player, index) => (
+                          <TableRow key={player.id} className="hover:bg-muted/50">
+                            <TableCell className="font-medium text-center">
+                              {index + 1}
+                            </TableCell>
+                            <TableCell>
+                              <div>
+                                <div className="font-medium">{player.family_name}</div>
+                                <div className="text-sm text-muted-foreground">
+                                  {player.character_name}
+                                </div>
+                              </div>
+                            </TableCell>
+                            <TableCell>
+                              <Badge className={getClassColor(player.main_class)}>
+                                {player.main_class}
+                              </Badge>
+                            </TableCell>
+                            <TableCell className="text-center font-mono">
+                              {player.ap}
+                            </TableCell>
+                            <TableCell className="text-center font-mono">
+                              {player.aap}
+                            </TableCell>
+                            <TableCell className="text-center font-mono">
+                              {player.dp}
+                            </TableCell>
+                            <TableCell className={`text-center font-bold font-mono ${getGearscoreColor(player.gearscore)}`}>
+                              {player.gearscore}
+                            </TableCell>
+                            <TableCell className="text-center text-sm text-muted-foreground">
+                              {formatDate(player.last_updated)}
+                            </TableCell>
+                            <TableCell className="text-center">
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => {
+                                  setSelectedPlayer(player)
+                                  fetchPlayerHistory(player.user_id)
+                                }}
+                              >
+                                <TrendingUp className="h-4 w-4 mr-1" />
+                                Histórico
+                              </Button>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                </CardContent>
+              </Card>
+            </TabsContent>
+          </Tabs>
         </CardContent>
       </Card>
 

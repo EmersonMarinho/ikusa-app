@@ -27,6 +27,7 @@ import {
   TargetIcon,
   MapIcon,
   FlagIcon,
+  RefreshCw,
 } from "lucide-react"
 
 interface DayStats {
@@ -65,6 +66,11 @@ export function HistoryPage() {
   const [error, setError] = useState<string | null>(null)
   const [showAllGuildStats, setShowAllGuildStats] = useState(false)
 
+  // Estados para GS Lollipop
+  const [lollipopGearscore, setLollipopGearscore] = useState<any[]>([])
+  const [gsLoading, setGsLoading] = useState(false)
+  const [gsError, setGsError] = useState<string | null>(null)
+
   // Load real data from Supabase
   useEffect(() => {
     const loadHistory = async () => {
@@ -102,6 +108,222 @@ export function HistoryPage() {
 
     loadHistory()
   }, [])
+
+  // Função para buscar gearscore dos players da Lollipop que participaram da node
+  const fetchLollipopGearscore = async (nodeData: any) => {
+    if (!nodeData) {
+      console.error('❌ nodeData é null ou undefined')
+      return
+    }
+    
+    setGsLoading(true)
+    setGsError(null)
+    
+    try {
+      console.log('🔍 ===== INÍCIO DA BUSCA DE GS =====')
+      console.log('🔍 nodeData completo:', nodeData)
+      console.log('🔍 nodeData.classes:', nodeData.classes)
+      console.log('🔍 Tipo de nodeData.classes:', typeof nodeData.classes)
+      
+      // Verifica se existe uma estrutura de guildas
+      console.log('🔍 nodeData.guilds:', nodeData.guilds)
+      console.log('🔍 nodeData.guild:', nodeData.guild)
+      
+      if (!nodeData.classes) {
+        console.error('❌ nodeData.classes não existe')
+        setGsError('Estrutura de dados inválida: classes não encontradas')
+        setGsLoading(false)
+        return
+      }
+      
+      const classKeys = Object.keys(nodeData.classes)
+      console.log('🔍 Chaves das classes encontradas:', classKeys)
+      
+      // 1. Extrai APENAS os players da Lollipop que participaram da node
+      const lollipopParticipants: Array<{
+        familia: string
+        nick: string
+        classe: string
+        hasGearscore: boolean
+        gearscoreData?: any
+      }> = []
+      
+      // Verifica se a guilda Lollipop está presente nos dados
+      const hasLollipop = nodeData.guilds && nodeData.guilds.includes('Lollipop') || 
+                          nodeData.guild === 'Lollipop' ||
+                          (nodeData.guilds && nodeData.guilds.some((g: string) => g.toLowerCase().includes('lollipop')))
+      
+      console.log('🔍 Guilda Lollipop presente na node:', hasLollipop)
+      
+      if (hasLollipop) {
+        // Se a Lollipop participou da node, precisa verificar INDIVIDUALMENTE cada player
+        // para confirmar se ele realmente é da Lollipop (não apenas assumir)
+        
+        // Verifica se existe playerStatsByGuild para fazer a verificação individual
+        if (nodeData.playerStatsByGuild && nodeData.playerStatsByGuild.Lollipop) {
+          console.log('🔍 Usando playerStatsByGuild para verificação individual')
+          
+          // Pega apenas os players que estão na guilda Lollipop
+          const lollipopPlayers = nodeData.playerStatsByGuild.Lollipop
+          console.log('🔍 Players confirmados da Lollipop:', Object.keys(lollipopPlayers).length)
+          
+          Object.entries(lollipopPlayers).forEach(([nick, stats]: [string, any]) => {
+            if (stats.familia && stats.familia.trim()) {
+              lollipopParticipants.push({
+                familia: stats.familia,
+                nick: nick,
+                classe: stats.classe || 'Classe não encontrada',
+                hasGearscore: false
+              })
+            }
+          })
+        } else {
+          console.log('🔍 playerStatsByGuild não encontrado, usando verificação alternativa')
+          
+          // Fallback: verifica se existe classes_by_guild para Lollipop
+          if (nodeData.classes_by_guild && nodeData.classes_by_guild.Lollipop) {
+            console.log('🔍 Usando classes_by_guild para verificação')
+            
+            Object.entries(nodeData.classes_by_guild.Lollipop).forEach(([classe, players]: [string, any]) => {
+              if (Array.isArray(players)) {
+                players.forEach((player: any) => {
+                  if (player.familia && player.familia.trim()) {
+                    lollipopParticipants.push({
+                      familia: player.familia,
+                      nick: player.nick || player.familia,
+                      classe: classe,
+                      hasGearscore: false
+                    })
+                  }
+                })
+              }
+            })
+          } else {
+            console.warn('⚠️ Estrutura de dados não suporta verificação individual de guilda')
+            console.log('🔍 Estruturas disponíveis:', {
+              playerStatsByGuild: !!nodeData.playerStatsByGuild,
+              classes_by_guild: !!nodeData.classes_by_guild,
+              guilds: nodeData.guilds,
+              guild: nodeData.guild
+            })
+          }
+        }
+      } else {
+        console.warn('⚠️ Guilda Lollipop não encontrada nesta node')
+        console.log('🔍 Guildas presentes:', nodeData.guilds || nodeData.guild)
+      }
+      
+      console.log('🔍 Participants Lollipop encontrados:', lollipopParticipants.length)
+      console.log('🔍 Lista de participants Lollipop:', lollipopParticipants.map(p => `${p.familia} (${p.classe})`))
+
+      // Se não encontrou nenhum participant Lollipop, retorna
+      if (lollipopParticipants.length === 0) {
+        setGsError('Nenhum player da Lollipop encontrado nesta node')
+        setGsLoading(false)
+        return
+      }
+
+      console.log('🔍 ===== BUSCANDO GEARSCORE =====')
+      
+      // 2. Busca gearscore de todos os players da Lollipop
+      const response = await fetch('/api/players-gearscore?guild=lollipop&limit=0')
+      const data = await response.json()
+
+      if (data.success) {
+        console.log('🔍 Total de players Lollipop com GS:', data.data.players.length)
+        
+        // 3. Cruza os dados: participants da Lollipop na node + gearscore atual
+        const participantsWithGearscore: any[] = []
+        const participantsWithoutGearscore: any[] = []
+        
+        lollipopParticipants.forEach(participant => {
+          // Busca gearscore do participant
+          const gearscorePlayer = data.data.players.find((player: any) => 
+            player.family_name.toLowerCase() === participant.familia.toLowerCase()
+          )
+          
+          if (gearscorePlayer && gearscorePlayer.gearscore > 0) {
+            // Participant tem gearscore válido
+            participantsWithGearscore.push({
+              ...gearscorePlayer,
+              main_class: participant.classe,
+              character_name: participant.nick
+            })
+          } else {
+            // Participant não tem gearscore
+            participantsWithoutGearscore.push({
+              family_name: participant.familia,
+              character_name: participant.nick,
+              main_class: participant.classe,
+              ap: 0,
+              aap: 0,
+              dp: 0,
+              gearscore: 0,
+              last_updated: 'N/A'
+            })
+          }
+        })
+        
+        console.log('🔍 Participants Lollipop com GS:', participantsWithGearscore.length)
+        console.log('🔍 Participants Lollipop sem GS:', participantsWithoutGearscore.length)
+        
+        // 4. Combina ambos os arrays para mostrar todos os participants da Lollipop
+        const allParticipants = [...participantsWithGearscore, ...participantsWithoutGearscore]
+        
+        setLollipopGearscore(allParticipants)
+        console.log('🔍 ===== FINALIZADO COM SUCESSO =====')
+      } else {
+        setGsError(data.error || 'Erro ao buscar dados de gearscore')
+      }
+    } catch (err) {
+      console.error('❌ Erro ao buscar gearscore:', err)
+      setGsError('Erro ao buscar dados de gearscore')
+    } finally {
+      setGsLoading(false)
+    }
+  }
+
+  // Função para buscar GS da node atual sendo visualizada
+  const fetchCurrentNodeGearscore = () => {
+    // Evita chamadas desnecessárias
+    if (gsLoading) {
+      console.log('⏳ Já está carregando, ignorando chamada')
+      return
+    }
+    
+    // Se já tem dados para esta node, não busca novamente
+    if (lollipopGearscore.length > 0) {
+      console.log('✅ Já tem dados de GS para esta node, ignorando chamada')
+      return
+    }
+    
+    // Encontra o record atual que está sendo visualizado
+    const currentRecord = historyData.find(record => 
+      record.id === viewingComplete || 
+      record.arquivo_nome === viewingComplete
+    )
+    
+    if (currentRecord) {
+      console.log('🔍 Buscando GS para node atual:', currentRecord.node)
+      fetchLollipopGearscore(currentRecord)
+    } else {
+      console.warn('⚠️ Nenhum record atual encontrado para buscar GS')
+    }
+  }
+
+  // Carrega gearscore da Lollipop quando necessário
+  useEffect(() => {
+    if (viewingComplete && !gsLoading && lollipopGearscore.length === 0) {
+      // Busca GS da node atual sendo visualizada
+      fetchCurrentNodeGearscore()
+    }
+  }, [viewingComplete]) // Remove dependências que causam loop
+
+  // Limpa dados de gearscore quando mudar de node
+  useEffect(() => {
+    setLollipopGearscore([])
+    setGsError(null)
+  }, [viewingComplete])
 
   // Get all unique guilds for filtering
   const allGuilds = useMemo(() => {
@@ -770,6 +992,7 @@ export function HistoryPage() {
                         <TabsTrigger value="jogadores">Jogadores</TabsTrigger>
                         <TabsTrigger value="matriz">Matriz</TabsTrigger>
                         <TabsTrigger value="kd-vs-guildas">KD vs Guildas</TabsTrigger>
+                        <TabsTrigger value="gs-lollipop">GS Lollipop</TabsTrigger>
                       </TabsList>
 
                       <TabsContent value="resumo" className="space-y-6 mt-4">
@@ -1168,6 +1391,232 @@ export function HistoryPage() {
                             </div>
                           )
                         })()}
+                      </TabsContent>
+
+                      <TabsContent value="gs-lollipop" className="mt-4">
+                        <div className="space-y-6">
+                          <div className="flex items-center justify-between">
+                            <div>
+                              <h3 className="text-lg font-semibold text-neutral-100">GS dos Players da Lollipop na Node</h3>
+                              <p className="text-sm text-neutral-400">
+                                Gearscore atual apenas dos players que participaram desta node de guerra
+                              </p>
+                            </div>
+                            <Button 
+                              onClick={fetchCurrentNodeGearscore}
+                              disabled={gsLoading}
+                              variant="outline"
+                              size="sm"
+                            >
+                              {gsLoading ? (
+                                <>
+                                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                                  Carregando...
+                                </>
+                              ) : (
+                                <>
+                                  <RefreshCw className="h-4 w-4 mr-2" />
+                                  Atualizar
+                                </>
+                              )}
+                            </Button>
+                          </div>
+
+                          {gsError && (
+                            <div className="bg-red-900/20 border border-red-700 rounded-lg p-4">
+                              <p className="text-red-400 text-sm">{gsError}</p>
+                            </div>
+                          )}
+
+                          {lollipopGearscore.length > 0 && (
+                            <>
+                              {/* Estatísticas Gerais */}
+                              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                                <Card className="bg-neutral-800 border-neutral-700">
+                                  <CardHeader className="pb-2">
+                                    <CardTitle className="text-sm font-medium text-neutral-300">Total de Participants</CardTitle>
+                                  </CardHeader>
+                                  <CardContent>
+                                    <div className="text-2xl font-bold text-neutral-100">{lollipopGearscore.length}</div>
+                                    <p className="text-xs text-neutral-400 mt-1">Todos os participants</p>
+                                  </CardContent>
+                                </Card>
+
+                                <Card className="bg-neutral-800 border-neutral-700">
+                                  <CardHeader className="pb-2">
+                                    <CardTitle className="text-sm font-medium text-neutral-300">Com Gearscore</CardTitle>
+                                  </CardHeader>
+                                  <CardContent>
+                                    <div className="text-2xl font-bold text-neutral-100">
+                                      {(() => {
+                                        // Filtra players com GS válido, excluindo Shai e players de defesa
+                                        const playersWithGS = lollipopGearscore.filter(p => p.gearscore > 0)
+                                        const validPlayers = playersWithGS.filter(player => {
+                                          // Exclui classe Shai
+                                          if (player.main_class === 'Shai') return false
+                                          
+                                          // Exclui players específicos de defesa
+                                          const defensePlayers = [
+                                            'Teste', 'Lagswitch', 'GarciaGil', 'OAT', 'Haleluya', 
+                                            'Fberg', 'Dxvn', 'ZeDoBambu', 'KingThePower', "Faellz",
+                                            "OverBlow", "Schwarzfang", "Vallimi", "Witte", "Miih",
+                                          ]
+                                          if (defensePlayers.includes(player.family_name)) return false
+                                          
+                                          return true
+                                        })
+                                        
+                                        return validPlayers.length
+                                      })()}
+                                    </div>
+                                    <p className="text-xs text-neutral-400 mt-1">Com GS válido (excluindo Shai e Defesa)</p>
+                                  </CardContent>
+                                </Card>
+
+                                <Card className="bg-neutral-800 border-neutral-700">
+                                  <CardHeader className="pb-2">
+                                    <CardTitle className="text-sm font-medium text-neutral-300">Sem Gearscore</CardTitle>
+                                  </CardHeader>
+                                  <CardContent>
+                                    <div className="text-2xl font-bold text-neutral-100">
+                                      {lollipopGearscore.filter(p => p.gearscore === 0).length}
+                                    </div>
+                                    <p className="text-xs text-neutral-400 mt-1">Sem registro</p>
+                                  </CardContent>
+                                </Card>
+
+                                <Card className="bg-neutral-800 border-neutral-700">
+                                  <CardHeader className="pb-2">
+                                    <CardTitle className="text-sm font-medium text-neutral-300">GS Médio</CardTitle>
+                                  </CardHeader>
+                                  <CardContent>
+                                    <div className="text-2xl font-bold text-neutral-100">
+                                      {(() => {
+                                        // Filtra players com GS válido, excluindo Shai e players de defesa
+                                        const playersWithGS = lollipopGearscore.filter(p => p.gearscore > 0)
+                                        const validPlayers = playersWithGS.filter(player => {
+                                          // Exclui classe Shai
+                                          if (player.main_class === 'Shai') return false
+                                          
+                                          // Exclui players específicos de defesa
+                                          const defensePlayers = [
+                                            'Teste', 'Lagswitch', 'GarciaGil', 'OAT', 'Haleluya', 
+                                            'Fberg', 'Dxvn', 'ZeDoBambu', 'KingThePower'
+                                          ]
+                                          if (defensePlayers.includes(player.family_name)) return false
+                                          
+                                          return true
+                                        })
+                                        
+                                        if (validPlayers.length === 0) return 0
+                                        return Math.round(
+                                          validPlayers.reduce((sum, player) => sum + player.gearscore, 0) / 
+                                          validPlayers.length
+                                        )
+                                      })()}
+                                    </div>
+                                    <p className="text-xs text-neutral-400 mt-1">Apenas com GS válido (excluindo Shai e Defesa)</p>
+                                  </CardContent>
+                                </Card>
+                              </div>
+
+                              {/* Tabela de Players */}
+                              <Card className="bg-neutral-800 border-neutral-700">
+                                <CardHeader>
+                                  <CardTitle className="text-neutral-100">Todos os Participants da Node</CardTitle>
+                                </CardHeader>
+                                <CardContent>
+                                  <div className="overflow-x-auto">
+                                    <table className="w-full text-sm">
+                                      <thead>
+                                        <tr className="border-b border-neutral-700 text-neutral-400">
+                                          <th className="w-12 text-left py-2 px-2">#</th>
+                                          <th className="text-left py-2 px-2">Player</th>
+                                          <th className="text-left py-2 px-2">Classe</th>
+                                          <th className="text-center py-2 px-2">Status</th>
+                                          <th className="text-center py-2 px-2">AP</th>
+                                          <th className="text-center py-2 px-2">AAP</th>
+                                          <th className="text-center py-2 px-2">DP</th>
+                                          <th className="text-center py-2 px-2 font-bold">GS</th>
+                                          <th className="text-left py-2 px-2">Última Atualização</th>
+                                        </tr>
+                                      </thead>
+                                      <tbody>
+                                        {lollipopGearscore
+                                          .sort((a, b) => b.gearscore - a.gearscore)
+                                          .map((player, index) => (
+                                            <tr key={index} className={`border-b border-neutral-700 hover:bg-neutral-700/50 ${
+                                              player.gearscore === 0 ? 'bg-red-900/20' : ''
+                                            }`}>
+                                              <td className="py-2 px-2 text-neutral-400">{index + 1}</td>
+                                              <td className="py-2 px-2">
+                                                <div>
+                                                  <div className="font-medium text-neutral-100">{player.family_name}</div>
+                                                  <div className="text-xs text-neutral-400">{player.character_name}</div>
+                                                </div>
+                                              </td>
+                                              <td className="py-2 px-2">
+                                                <Badge variant="outline" className="text-xs">
+                                                  {player.main_class}
+                                                </Badge>
+                                              </td>
+                                              <td className="py-2 px-2 text-center">
+                                                {player.gearscore > 0 ? (
+                                                  <Badge className="bg-green-600 text-white text-xs">
+                                                    Com GS
+                                                  </Badge>
+                                                ) : (
+                                                  <Badge className="bg-red-600 text-white text-xs">
+                                                    Sem GS
+                                                  </Badge>
+                                                )}
+                                              </td>
+                                              <td className="py-2 px-2 text-center font-mono text-neutral-300">
+                                                {player.gearscore > 0 ? player.ap : '-'}
+                                              </td>
+                                              <td className="py-2 px-2 text-center font-mono text-neutral-300">
+                                                {player.gearscore > 0 ? player.aap : '-'}
+                                              </td>
+                                              <td className="py-2 px-2 text-center font-mono text-neutral-300">
+                                                {player.gearscore > 0 ? player.dp : '-'}
+                                              </td>
+                                              <td className="py-2 px-2 text-center font-bold font-mono text-lg">
+                                                {player.gearscore > 0 ? (
+                                                  <span className={
+                                                    player.gearscore >= 850 ? 'text-green-400' :
+                                                    player.gearscore >= 800 ? 'text-blue-400' :
+                                                    player.gearscore >= 750 ? 'text-yellow-400' :
+                                                    'text-red-400'
+                                                  }>
+                                                    {player.gearscore}
+                                                  </span>
+                                                ) : (
+                                                  <span className="text-red-400">N/A</span>
+                                                )}
+                                              </td>
+                                              <td className="py-2 px-2 text-xs text-neutral-400">
+                                                {player.gearscore > 0 ? (
+                                                  new Date(player.last_updated).toLocaleDateString('pt-BR')
+                                                ) : (
+                                                  'N/A'
+                                                )}
+                                              </td>
+                                            </tr>
+                                          ))}
+                                      </tbody>
+                                    </table>
+                                  </div>
+                                </CardContent>
+                              </Card>
+                            </>
+                          )}
+
+                          {!gsLoading && lollipopGearscore.length === 0 && !gsError && (
+                            <div className="text-center py-8">
+                              <p className="text-neutral-400">Nenhum dado de gearscore encontrado para a guilda Lollipop.</p>
+                            </div>
+                          )}
+                        </div>
                       </TabsContent>
                     </Tabs>
                   </div>
