@@ -5,6 +5,7 @@ import { GeistMono } from "geist/font/mono"
 import "./globals.css"
 import { Header } from "@/components/header"
 import { Footer } from "@/components/footer"
+import { PinAuthProvider } from "@/lib/pin-auth"
 
 export const metadata: Metadata = {
   title: "Ikusa - Guild Log Processor",
@@ -29,9 +30,11 @@ html {
         `}</style>
       </head>
       <body className="min-h-screen bg-neutral-950 text-neutral-200">
-        <Header />
-        <main className="container mx-auto max-w-7xl px-4 py-8">{children}</main>
-        <Footer />
+        <PinAuthProvider>
+          <Header />
+          <main className="container mx-auto max-w-7xl px-4 py-8">{children}</main>
+          <Footer />
+        </PinAuthProvider>
       </body>
     </html>
   )

@@ -20,6 +20,7 @@ import {
   BuildingIcon
 } from "lucide-react"
 import { FamilyCard } from "@/components/shared/family-card"
+import { ProtectedRoute } from "@/components/protected-route"
 
 interface AllianceMember {
   familia: string
@@ -101,7 +102,7 @@ interface MonthCard {
   is_current: boolean
 }
 
-export default function KDAMensalPage() {
+function KDAMensalPageContent() {
   const [allianceMembers, setAllianceMembers] = useState<AllianceMember[]>([])
   const [familyData, setFamilyData] = useState<FamilyData[]>([])
   // Removido: cálculo manual de K/D via log de combate
@@ -934,5 +935,13 @@ export default function KDAMensalPage() {
         </CardContent>
       </Card>
     </div>
+  )
+}
+
+export default function KDAMensalPage() {
+  return (
+    <ProtectedRoute>
+      <KDAMensalPageContent />
+    </ProtectedRoute>
   )
 }

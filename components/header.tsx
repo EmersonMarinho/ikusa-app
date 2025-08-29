@@ -3,6 +3,9 @@
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { cn } from "@/lib/utils"
+import { usePinAuth } from "@/lib/pin-auth"
+import { Button } from "@/components/ui/button"
+import { LogOut } from "lucide-react"
 
 const navigation = [
   { name: "Upload", href: "/" },
@@ -14,6 +17,7 @@ const navigation = [
 
 export function Header() {
   const pathname = usePathname()
+  const { isAuthenticated, logout } = usePinAuth()
 
   return (
     <header className="sticky top-0 z-50 border-b border-neutral-800 bg-neutral-950/95 backdrop-blur supports-[backdrop-filter]:bg-neutral-950/60">
@@ -36,6 +40,18 @@ export function Header() {
                 {item.name}
               </Link>
             ))}
+            
+            {isAuthenticated && (
+              <Button
+                onClick={logout}
+                variant="outline"
+                size="sm"
+                className="ml-4 text-red-400 border-red-400/20 hover:bg-red-400/10 hover:text-red-300"
+              >
+                <LogOut className="h-4 w-4 mr-2" />
+                Sair
+              </Button>
+            )}
           </nav>
         </div>
       </div>

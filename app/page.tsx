@@ -1,5 +1,10 @@
 import { UploadPage } from "@/components/upload-page"
+import { ProtectedRoute } from "@/components/protected-route"
 
 export default function Home() {
-  return <UploadPage />
+  return (
+    <ProtectedRoute>
+      <UploadPage />
+    </ProtectedRoute>
+  )
 }
