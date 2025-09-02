@@ -52,6 +52,8 @@ interface FamilyGroupedData {
     deaths_vs_others: number
     last_played: string
   }>
+  nodes_count?: number
+  log_ids?: string[]
   total_kills: number
   total_deaths: number
   total_kills_vs_chernobyl: number
@@ -243,6 +245,8 @@ function KDAMensalPageContent() {
           familia,
           guilda: player.guilda,
           classes: [],
+          nodes_count: 0,
+          log_ids: [],
           total_kills: 0,
           total_deaths: 0,
           total_kills_vs_chernobyl: 0,
@@ -256,6 +260,11 @@ function KDAMensalPageContent() {
       }
       
       const familyData = familyMap.get(familia)!
+      // Acumula ids de logs distintos para contar nodes
+      const currentIds = new Set<string>(familyData.log_ids)
+      for (const id of (player.logs_processed || [])) currentIds.add(id)
+      familyData.log_ids = Array.from(currentIds)
+      familyData.nodes_count = familyData.log_ids.length
       
       // Adiciona classes do jogador
       for (const classData of player.classes_played) {
@@ -712,6 +721,8 @@ function KDAMensalPageContent() {
                             familia={family.familia}
                             guilda={family.guilda}
                             classes={family.classes}
+                            nodes_count={family.nodes_count}
+                            log_ids={family.log_ids}
                           />
                         ))}
                     </div>

@@ -25,9 +25,11 @@ interface FamilyCardProps {
     deaths_vs_others: number
     last_played: string
   }>
+  nodes_count?: number
+  log_ids?: string[]
 }
 
-export function FamilyCard({ familia, guilda, classes }: FamilyCardProps) {
+export function FamilyCard({ familia, guilda, classes, nodes_count, log_ids }: FamilyCardProps) {
   const [selectedClass, setSelectedClass] = useState<string | null>(null)
   const [isModalOpen, setIsModalOpen] = useState(false)
 
@@ -72,7 +74,7 @@ export function FamilyCard({ familia, guilda, classes }: FamilyCardProps) {
         
         <CardContent className="space-y-4">
           {/* Estatísticas Gerais da Família */}
-          <div className="grid grid-cols-3 gap-3 p-3 bg-neutral-700 rounded-lg">
+          <div className="grid grid-cols-4 gap-3 p-3 bg-neutral-700 rounded-lg">
             <div className="text-center">
               <div className="text-xl font-bold text-green-400">{totalKills}</div>
               <div className="text-xs text-neutral-400">Total Kills</div>
@@ -88,6 +90,10 @@ export function FamilyCard({ familia, guilda, classes }: FamilyCardProps) {
                 {totalKdOverall === Infinity ? '∞' : totalKdOverall.toFixed(2)}
               </div>
               <div className="text-xs text-neutral-400">K/D Geral</div>
+            </div>
+            <div className="text-center">
+              <div className="text-xl font-bold text-blue-400">{nodes_count ?? 0}</div>
+              <div className="text-xs text-neutral-400">Nodes jogadas</div>
             </div>
           </div>
 
@@ -126,13 +132,21 @@ export function FamilyCard({ familia, guilda, classes }: FamilyCardProps) {
             </div>
           </div>
 
-          {/* Última Atividade */}
+          {/* Última Atividade e Ações */}
           {classes.length > 0 && (
-            <div className="text-xs text-neutral-500 text-center pt-2 border-t border-neutral-700">
-              <div className="flex items-center justify-center gap-1">
+            <div className="text-xs text-neutral-500 pt-2 border-t border-neutral-700 flex items-center justify-between">
+              <div className="flex items-center gap-1">
                 <TrendingUpIcon className="h-3 w-3" />
                 Última atividade: {new Date(Math.max(...classes.map(c => new Date(c.last_played).getTime()))).toLocaleDateString('pt-BR')}
               </div>
+              {Array.isArray(log_ids) && log_ids.length > 0 && (
+                <a
+                  href={`/history?familia=${encodeURIComponent(familia)}`}
+                  className="text-blue-400 hover:text-blue-300 underline-offset-2 hover:underline"
+                >
+                  Ver {log_ids.length} registro(s)
+                </a>
+              )}
             </div>
           )}
         </CardContent>
