@@ -24,7 +24,7 @@ export function Header() {
       <div className="container mx-auto max-w-7xl px-4">
         <div className="flex h-16 items-center justify-between">
           <Link href="/" className="text-2xl font-bold text-blue-500 hover:text-blue-400 transition-colors">
-            Ikusa
+            Lollipop
           </Link>
 
           <nav className="flex items-center space-x-6">

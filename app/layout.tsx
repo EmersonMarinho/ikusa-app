@@ -8,7 +8,7 @@ import { Footer } from "@/components/footer"
 import { PinAuthProvider } from "@/lib/pin-auth"
 
 export const metadata: Metadata = {
-  title: "Ikusa - Guild Log Processor",
+  title: "Processador de Logs de Guilda",
   description: "Process and compare guild compositions from logs",
   generator: "v0.app",
 }

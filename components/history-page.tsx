@@ -2,6 +2,8 @@
 
 import { useState, useMemo, useEffect } from "react"
 import { Button } from "@/components/ui/button"
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -65,6 +67,10 @@ export function HistoryPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [showAllGuildStats, setShowAllGuildStats] = useState(false)
+  const [showChernModal, setShowChernModal] = useState(false) // legacy (não usado com popover)
+  const [chernSearch, setChernSearch] = useState("")
+  const [chernClassFilter, setChernClassFilter] = useState<string>('all')
+  const [chernSortBy, setChernSortBy] = useState<'presence' | 'kd' | 'name'>('presence')
 
   // Formata data em relativo (hoje, há 1 dia, há N dias)
   const formatRelativeDay = (dateInput: string): string => {
@@ -564,6 +570,111 @@ export function HistoryPage() {
     return Object.values(stats).sort((a, b) => b.averageKD - a.averageKD)
   }, [filteredRecords])
 
+  // Participação de jogadores da Chernobyl nos registros filtrados
+  const chernPlayersParticipation = useMemo(() => {
+    const byNick = new Map<string, {
+      nick: string
+      familia: string
+      classeCounts: Record<string, number>
+      mainClass: string
+      records: Set<string>
+      kills: number
+      deaths: number
+    }>()
+
+    filteredRecords.forEach((record) => {
+      const stats = (record as any).player_stats_by_guild || (record as any).playerStatsByGuild || {}
+      const recordId = (record as any).id
+
+      Object.entries(stats as Record<string, any>).forEach(([guildName, byNickObj]: [string, any]) => {
+        if ((guildName || '').toString().toLowerCase() !== 'chernobyl') return
+        Object.entries(byNickObj || {}).forEach(([nick, st]: [string, any]) => {
+          const familia = (st?.familia || '').toString()
+          const classe = (st?.classe || 'Desconhecida').toString()
+          const kills = Number(st?.kills || 0)
+          const deaths = Number(st?.deaths || 0)
+
+          if (!byNick.has(nick)) {
+            byNick.set(nick, {
+              nick,
+              familia,
+              classeCounts: {},
+              mainClass: classe,
+              records: new Set<string>(),
+              kills: 0,
+              deaths: 0,
+            })
+          }
+
+          const ref = byNick.get(nick)!
+          ref.records.add(recordId)
+          ref.kills += kills
+          ref.deaths += deaths
+          ref.classeCounts[classe] = (ref.classeCounts[classe] || 0) + 1
+          const entries = Object.entries(ref.classeCounts)
+          entries.sort((a, b) => b[1] - a[1])
+          ref.mainClass = entries[0]?.[0] || classe
+        })
+      })
+    })
+
+    const rows = Array.from(byNick.values()).map((p) => ({
+      nick: p.nick,
+      familia: p.familia,
+      mainClass: p.mainClass,
+      appearances: p.records.size,
+      kills: p.kills,
+      deaths: p.deaths,
+      kd: p.deaths > 0 ? p.kills / p.deaths : (p.kills > 0 ? Infinity : 0),
+    }))
+
+    // Distribuição por classe considerando a classe principal dos jogadores
+    const byClass: Record<string, number> = {}
+    rows.forEach((r) => {
+      byClass[r.mainClass] = (byClass[r.mainClass] || 0) + 1
+    })
+
+    const totalPlayers = rows.length
+    const topByPresence = rows.sort((a, b) => {
+      if (b.appearances === a.appearances) return b.kills - a.kills
+      return b.appearances - a.appearances
+    })
+
+    return { totalPlayers, byClass, topByPresence }
+  }, [filteredRecords])
+
+  const chernClassOptions = useMemo(() => {
+    return Object.keys(chernPlayersParticipation.byClass || {}).sort((a, b) => a.localeCompare(b, 'pt'))
+  }, [chernPlayersParticipation])
+
+  const chernRows = useMemo(() => {
+    let rows = [...(chernPlayersParticipation.topByPresence || [])]
+    // Filtro por busca
+    if (chernSearch.trim()) {
+      const q = chernSearch.toLowerCase()
+      rows = rows.filter(r => r.nick.toLowerCase().includes(q) || (r.familia || '').toLowerCase().includes(q))
+    }
+    // Filtro por classe
+    if (chernClassFilter !== 'all') {
+      rows = rows.filter(r => (r.mainClass || '') === chernClassFilter)
+    }
+    // Ordenação
+    rows.sort((a, b) => {
+      if (chernSortBy === 'name') return a.nick.localeCompare(b.nick)
+      if (chernSortBy === 'kd') {
+        const ak = a.kd, bk = b.kd
+        if (!isFinite(bk) && isFinite(ak)) return 1
+        if (!isFinite(ak) && isFinite(bk)) return -1
+        if (bk === ak) return b.appearances - a.appearances
+        return bk - ak
+      }
+      // presence (default)
+      if (b.appearances === a.appearances) return b.kd - a.kd
+      return b.appearances - a.appearances
+    })
+    return rows
+  }, [chernPlayersParticipation, chernSearch, chernClassFilter, chernSortBy])
+
   const toggleKillStats = (date: string) => {
     setShowKillStats((prev) => ({ ...prev, [date]: !prev[date] }))
   }
@@ -694,6 +805,305 @@ export function HistoryPage() {
           </div>
         </CardContent>
       </Card>
+
+      {/* Jogadores Chernobyl (resumo compacto com opção de expandir) */}
+      <Card className="border-neutral-800 bg-neutral-900">
+        <CardHeader>
+          <CardTitle className="text-neutral-100 flex items-center justify-between">
+            <span className="flex items-center">
+              <UsersIcon className="h-5 w-5 mr-2" />
+              Jogadores da Chernobyl
+            </span>
+            <div className="flex items-center gap-2">
+              <Badge variant="outline" className="border-neutral-700 text-neutral-300">
+                {chernPlayersParticipation.totalPlayers} únicos
+              </Badge>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button variant="outline" size="sm" className="border-neutral-700 text-neutral-200">
+                    Ver recorrência <span className="ml-1">▾</span>
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent align="end" className="w-[90vw] max-w-[1200px] p-0 bg-neutral-900 border-neutral-700">
+                  <div className="p-3 border-b border-neutral-700 text-sm text-neutral-400">
+                    {chernPlayersParticipation.totalPlayers} jogadores únicos nos registros filtrados
+                  </div>
+                  <div className="p-3">
+                    <Tabs defaultValue="recorrencia" className="w-full">
+                      <TabsList className="bg-neutral-800 border border-neutral-700">
+                        <TabsTrigger value="recorrencia">Recorrência</TabsTrigger>
+                        <TabsTrigger value="lista">Lista</TabsTrigger>
+                      </TabsList>
+                      <TabsContent value="recorrencia" className="mt-4">
+                        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                          <div className="bg-neutral-800 rounded-lg p-4 border border-neutral-700 md:col-span-1">
+                            <h4 className="text-sm text-neutral-300 mb-3">Distribuição por Classe</h4>
+                            <div className="space-y-2">
+                              {Object.entries(chernPlayersParticipation.byClass).sort((a,b)=> b[1]-a[1]).map(([classe, count]) => {
+                                const pct = (count/(chernPlayersParticipation.totalPlayers||1))*100
+                                return (
+                                  <div key={classe}>
+                                    <div className="flex items-center justify-between text-sm mb-1">
+                                      <span className="text-neutral-300">{classe}</span>
+                                      <span className="text-neutral-100 font-medium">{count} ({pct.toFixed(1)}%)</span>
+                                    </div>
+                                    <div className="w-full h-2 bg-neutral-700 rounded">
+                                      <div className="h-2 bg-blue-500 rounded" style={{ width: `${pct}%` }} />
+                                    </div>
+                                  </div>
+                                )
+                              })}
+                              {Object.keys(chernPlayersParticipation.byClass).length === 0 && (
+                                <div className="text-sm text-neutral-500">Sem dados de classe</div>
+                              )}
+                            </div>
+                          </div>
+                          <div className="md:col-span-3 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                            {chernRows.slice(0, 18).map((p, i) => (
+                              <div
+                                key={`${p.nick}-${i}`}
+                                className="bg-neutral-800 rounded-xl p-4 border border-neutral-700 hover:border-neutral-600 hover:bg-neutral-780 transition-colors flex items-start justify-between min-h-[110px]"
+                              >
+                                <div className="pr-3">
+                                  <div className="text-neutral-100 font-semibold text-base">{p.nick}</div>
+                                  <div className="text-xs text-neutral-400 mt-1">{p.familia} • {p.mainClass}</div>
+                                  <a
+                                    href={`/history?familia=${encodeURIComponent(p.familia)}`}
+                                    className="inline-block mt-3 text-blue-400 hover:text-blue-300 underline-offset-2 hover:underline text-xs"
+                                  >
+                                    Ver histórico
+                                  </a>
+                                </div>
+                                <div className="flex flex-col items-end gap-2">
+                                  <Badge className="bg-neutral-700 text-neutral-200">{p.appearances}x</Badge>
+                                  <Badge className={p.kd>=1? 'bg-green-900 text-green-300':'bg-red-900 text-red-300'}>
+                                    {p.kd===Infinity? '∞' : p.kd.toFixed(2)} K/D
+                                  </Badge>
+                                </div>
+                              </div>
+                            ))}
+                            {chernPlayersParticipation.topByPresence.length === 0 && (
+                              <div className="text-sm text-neutral-500">Sem jogadores Chernobyl nos registros</div>
+                            )}
+                          </div>
+                        </div>
+                      </TabsContent>
+                      <TabsContent value="lista" className="mt-4">
+                        <div className="bg-neutral-800 rounded-lg p-0 border border-neutral-700">
+                          <div className="p-3 flex flex-col md:flex-row gap-3 items-start md:items-center border-b border-neutral-700">
+                            <div className="flex items-center gap-2 w-full md:w-1/2">
+                              <Input
+                                placeholder="Buscar jogador/família..."
+                                className="bg-neutral-850 border-neutral-700 text-neutral-200"
+                                value={chernSearch}
+                                onChange={(e)=>setChernSearch(e.target.value)}
+                              />
+                              <Select value={chernClassFilter} onValueChange={setChernClassFilter}>
+                                <SelectTrigger className="w-48 bg-neutral-850 border-neutral-700 text-neutral-200">
+                                  <SelectValue placeholder="Classe" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="all">Todas as classes</SelectItem>
+                                  {chernClassOptions.map(c=> (
+                                    <SelectItem key={c} value={c}>{c}</SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                              <Select value={chernSortBy} onValueChange={(v)=>setChernSortBy(v as any)}>
+                                <SelectTrigger className="w-44 bg-neutral-850 border-neutral-700 text-neutral-200">
+                                  <SelectValue placeholder="Ordenar por" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="presence">Presença (maior)</SelectItem>
+                                  <SelectItem value="kd">K/D (maior)</SelectItem>
+                                  <SelectItem value="name">Nome (A-Z)</SelectItem>
+                                </SelectContent>
+                              </Select>
+                            </div>
+                          </div>
+                          <div className="overflow-x-auto overflow-y-auto max-h-[60vh]">
+                          <table className="w-full text-sm">
+                            <thead>
+                              <tr className="sticky top-0 bg-neutral-850 border-b border-neutral-700 text-neutral-400">
+                                <th className="text-left p-2 w-1/5">Jogador</th>
+                                <th className="text-left p-2 w-1/5">Família</th>
+                                <th className="text-left p-2 w-1/5">Classe</th>
+                                <th className="text-center p-2 w-1/6">Presença</th>
+                                <th className="text-center p-2 w-1/6">K/D</th>
+                                <th className="text-center p-2 w-1/6">Histórico</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {chernRows.map((p, i) => (
+                                <tr key={`${p.nick}-${i}`} className="border-b border-neutral-800 hover:bg-neutral-800">
+                                  <td className="p-2 text-neutral-200 font-medium">{p.nick}</td>
+                                  <td className="p-2 text-neutral-300">{p.familia}</td>
+                                  <td className="p-2 text-neutral-300">{p.mainClass}</td>
+                                  <td className="p-2 text-center text-neutral-200">{p.appearances}</td>
+                                  <td className="p-2 text-center font-semibold">{p.kd===Infinity? '∞' : p.kd.toFixed(2)}</td>
+                                  <td className="p-2 text-center">
+                                    <a href={`/history?familia=${encodeURIComponent(p.familia)}`} className="text-blue-400 hover:text-blue-300 underline-offset-2 hover:underline">Ver</a>
+                                  </td>
+                                </tr>
+                              ))}
+                              {chernRows.length === 0 && (
+                                <tr>
+                                  <td colSpan={6} className="p-3 text-center text-neutral-500">Sem jogadores Chernobyl nos registros</td>
+                                </tr>
+                              )}
+                            </tbody>
+                          </table>
+                          </div>
+                        </div>
+                      </TabsContent>
+                    </Tabs>
+                  </div>
+                </PopoverContent>
+              </Popover>
+            </div>
+          </CardTitle>
+        </CardHeader>
+      </Card>
+
+      {/* Modal Chernobyl */}
+      <Dialog open={showChernModal} onOpenChange={setShowChernModal}>
+        <DialogContent className="w-[96vw] max-w-[1400px] max-h-[90vh] overflow-hidden bg-neutral-900 border-neutral-700">
+          <DialogHeader>
+            <DialogTitle className="text-neutral-100">Jogadores da Chernobyl</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 p-1">
+            <div className="text-sm text-neutral-400">{chernPlayersParticipation.totalPlayers} jogadores únicos nos registros filtrados</div>
+            <Tabs defaultValue="recorrencia" className="w-full">
+              <TabsList className="bg-neutral-800 border border-neutral-700">
+                <TabsTrigger value="recorrencia">Recorrência</TabsTrigger>
+                <TabsTrigger value="lista">Lista</TabsTrigger>
+              </TabsList>
+              <TabsContent value="recorrencia" className="mt-4">
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                  <div className="bg-neutral-800 rounded-lg p-4 border border-neutral-700 md:col-span-1">
+                    <h4 className="text-sm text-neutral-300 mb-3">Distribuição por Classe</h4>
+                    <div className="space-y-2">
+                      {Object.entries(chernPlayersParticipation.byClass).sort((a,b)=> b[1]-a[1]).map(([classe, count]) => {
+                        const pct = (count/(chernPlayersParticipation.totalPlayers||1))*100
+                        return (
+                          <div key={classe}>
+                            <div className="flex items-center justify-between text-sm mb-1">
+                              <span className="text-neutral-300">{classe}</span>
+                              <span className="text-neutral-100 font-medium">{count} ({pct.toFixed(1)}%)</span>
+                            </div>
+                            <div className="w-full h-2 bg-neutral-700 rounded">
+                              <div className="h-2 bg-blue-500 rounded" style={{ width: `${pct}%` }} />
+                            </div>
+                          </div>
+                        )
+                      })}
+                      {Object.keys(chernPlayersParticipation.byClass).length === 0 && (
+                        <div className="text-sm text-neutral-500">Sem dados de classe</div>
+                      )}
+                    </div>
+                  </div>
+                  <div className="md:col-span-3 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {chernRows.slice(0, 18).map((p, i) => (
+                      <div
+                        key={`${p.nick}-${i}`}
+                        className="bg-neutral-800 rounded-xl p-4 border border-neutral-700 hover:border-neutral-600 hover:bg-neutral-780 transition-colors flex items-start justify-between min-h-[110px]"
+                      >
+                        <div className="pr-3">
+                          <div className="text-neutral-100 font-semibold text-base">{p.nick}</div>
+                          <div className="text-xs text-neutral-400 mt-1">{p.familia} • {p.mainClass}</div>
+                          <a
+                            href={`/history?familia=${encodeURIComponent(p.familia)}`}
+                            className="inline-block mt-3 text-blue-400 hover:text-blue-300 underline-offset-2 hover:underline text-xs"
+                          >
+                            Ver histórico
+                          </a>
+                        </div>
+                        <div className="flex flex-col items-end gap-2">
+                          <Badge className="bg-neutral-700 text-neutral-200">{p.appearances}x</Badge>
+                          <Badge className={p.kd>=1? 'bg-green-900 text-green-300':'bg-red-900 text-red-300'}>
+                            {p.kd===Infinity? '∞' : p.kd.toFixed(2)} K/D
+                          </Badge>
+                        </div>
+                      </div>
+                    ))}
+                    {chernPlayersParticipation.topByPresence.length === 0 && (
+                      <div className="text-sm text-neutral-500">Sem jogadores Chernobyl nos registros</div>
+                    )}
+                  </div>
+                </div>
+              </TabsContent>
+              <TabsContent value="lista" className="mt-4">
+                <div className="bg-neutral-800 rounded-lg p-0 border border-neutral-700">
+                  <div className="p-3 flex flex-col md:flex-row gap-3 items-start md:items-center border-b border-neutral-700">
+                    <div className="flex items-center gap-2 w-full md:w-1/2">
+                      <Input
+                        placeholder="Buscar jogador/família..."
+                        className="bg-neutral-850 border-neutral-700 text-neutral-200"
+                        value={chernSearch}
+                        onChange={(e)=>setChernSearch(e.target.value)}
+                      />
+                      <Select value={chernClassFilter} onValueChange={setChernClassFilter}>
+                        <SelectTrigger className="w-48 bg-neutral-850 border-neutral-700 text-neutral-200">
+                          <SelectValue placeholder="Classe" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="all">Todas as classes</SelectItem>
+                          {chernClassOptions.map(c=> (
+                            <SelectItem key={c} value={c}>{c}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <Select value={chernSortBy} onValueChange={(v)=>setChernSortBy(v as any)}>
+                        <SelectTrigger className="w-44 bg-neutral-850 border-neutral-700 text-neutral-200">
+                          <SelectValue placeholder="Ordenar por" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="presence">Presença (maior)</SelectItem>
+                          <SelectItem value="kd">K/D (maior)</SelectItem>
+                          <SelectItem value="name">Nome (A-Z)</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                  <div className="overflow-x-auto overflow-y-auto max-h-[70vh]">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="sticky top-0 bg-neutral-850 border-b border-neutral-700 text-neutral-400">
+                        <th className="text-left p-2 w-1/5">Jogador</th>
+                        <th className="text-left p-2 w-1/5">Família</th>
+                        <th className="text-left p-2 w-1/5">Classe</th>
+                        <th className="text-center p-2 w-1/6">Presença</th>
+                        <th className="text-center p-2 w-1/6">K/D</th>
+                        <th className="text-center p-2 w-1/6">Histórico</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {chernRows.map((p, i) => (
+                        <tr key={`${p.nick}-${i}`} className="border-b border-neutral-800 hover:bg-neutral-800">
+                          <td className="p-2 text-neutral-200 font-medium">{p.nick}</td>
+                          <td className="p-2 text-neutral-300">{p.familia}</td>
+                          <td className="p-2 text-neutral-300">{p.mainClass}</td>
+                          <td className="p-2 text-center text-neutral-200">{p.appearances}</td>
+                          <td className="p-2 text-center font-semibold">{p.kd===Infinity? '∞' : p.kd.toFixed(2)}</td>
+                          <td className="p-2 text-center">
+                            <a href={`/history?familia=${encodeURIComponent(p.familia)}`} className="text-blue-400 hover:text-blue-300 underline-offset-2 hover:underline">Ver</a>
+                          </td>
+                        </tr>
+                      ))}
+                      {chernPlayersParticipation.topByPresence.length === 0 && (
+                        <tr>
+                          <td colSpan={6} className="p-3 text-center text-neutral-500">Sem jogadores Chernobyl nos registros</td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                  </div>
+                </div>
+              </TabsContent>
+            </Tabs>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Daily Statistics */}
       <div className="space-y-6">
