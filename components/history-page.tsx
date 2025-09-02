@@ -1029,32 +1029,19 @@ export function HistoryPage() {
                           </div>
                         )}
 
-                        {/* Summary Cards */}
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        {/* Summary Cards (sem Total Geral e Total Kills) */}
+                        <div className="grid grid-cols-1 md:grid-cols-1 gap-4">
                           <StatsCard
                             title="Guilda"
                             value={selectedGuildView === "all" ? guilds.join(", ") : selectedGuildView}
                             icon={UsersIcon}
                             variant="info"
                           />
-                          <StatsCard
-                            title="Total Geral"
-                            value={processedData.total_geral || processedData.totalGeral}
-                            variant="success"
-                          />
-                          {processedData.kills_by_guild && (
-                            <StatsCard
-                              title="Total Kills"
-                              value={Object.values(processedData.kills_by_guild || {}).reduce((a: any, b: any) => (a || 0) + (b || 0), 0) as number}
-                              icon={SwordIcon}
-                              variant="success"
-                            />
-                          )}
                         </div>
 
                         {/* Classes Breakdown */}
                         <div className="space-y-4">
-                          <h3 className="text-lg font-semibold text-neutral-100">Total por Classe</h3>
+                          <h3 className="text-lg font-semibold text-neutral-100">Composição por Classe</h3>
                           <div className="space-y-3">
                             {(processedData.total_por_classe || processedData.totalPorClasse).map(({ classe, count }: any) => {
                               const playersBase = selectedGuildView === "all" || !processedData.classes_by_guild
@@ -1088,13 +1075,19 @@ export function HistoryPage() {
                                 return { nick: p.nick, familia: p.familia, killsVsChernobyl, ...kdInfo }
                               })
 
+                              // Denominador para %: total de jogadores da guilda selecionada
+                              const guildTotal = (selectedGuildView === 'all' || !processedData.classes_by_guild)
+                                ? Number(processedData.total_geral || processedData.totalGeral)
+                                : Object.values(((processedData.classes_by_guild || {})[selectedGuildView] || {}))
+                                    .reduce((acc: number, arr: any) => acc + (Array.isArray(arr) ? arr.length : 0), 0)
+
                               return (
                                 <CollapsibleClassItem
                                   key={classe}
                                   classe={classe}
                                   count={players.length}
                                   players={players}
-                                  total={Number(processedData.total_geral || processedData.totalGeral)}
+                                  total={guildTotal}
                                 />
                               )
                             })}
