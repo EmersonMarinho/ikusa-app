@@ -216,8 +216,20 @@ export async function getMonthlyHistory(): Promise<MonthlyConfig[]> {
 
 // Função para buscar logs da aliança por período
 export async function getAllianceLogsByMonth(monthYear: string): Promise<any[]> {
-  const startDate = `${monthYear}-01T00:00:00Z`
-  const endDate = `${monthYear}-31T23:59:59Z`
+  // Calcula início e fim reais do mês (evita datas inválidas como dia 31 em meses com 30 dias)
+  let startDate = `${monthYear}-01T00:00:00Z`
+  let endDate = `${monthYear}-31T23:59:59Z`
+  try {
+    const [yearStr, monthStr] = monthYear.split('-')
+    const year = Number(yearStr)
+    const month = Number(monthStr) // 1-12
+    if (!Number.isNaN(year) && !Number.isNaN(month) && month >= 1 && month <= 12) {
+      const start = new Date(Date.UTC(year, month - 1, 1, 0, 0, 0))
+      const end = new Date(Date.UTC(year, month, 0, 23, 59, 59))
+      startDate = start.toISOString()
+      endDate = end.toISOString()
+    }
+  } catch {}
   
   const { data, error } = await supabase
     .from('process_logs')

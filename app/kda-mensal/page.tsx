@@ -450,42 +450,7 @@ function KDAMensalPageContent() {
         </Card>
       </div>
 
-      {/* Estatísticas das Famílias */}
-      {familyGroupedData.length > 0 && (
-        <Card className="border-neutral-800 bg-neutral-900">
-          <CardHeader className="pb-3">
-            <CardTitle className="text-neutral-100 text-lg flex items-center gap-2">
-              <BuildingIcon className="h-4 w-4 text-blue-400" />
-              Estatísticas das Famílias
-            </CardTitle>
-            <CardDescription className="text-sm">
-              Resumo das {familyGroupedData.length} famílias ativas com dados de KDA
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="max-h-96 overflow-y-auto">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-              <div className="text-center p-3 bg-neutral-800 rounded border border-neutral-700">
-                <div className="text-lg font-bold text-green-400">
-                  {familyGroupedData.reduce((sum, f) => sum + f.total_kills, 0).toLocaleString()}
-                </div>
-                <div className="text-xs text-neutral-400">Total de Kills</div>
-              </div>
-              <div className="text-center p-3 bg-neutral-800 rounded border border-neutral-700">
-                <div className="text-lg font-bold text-red-400">
-                  {familyGroupedData.reduce((sum, f) => sum + f.total_deaths, 0).toLocaleString()}
-                </div>
-                <div className="text-xs text-neutral-400">Total de Deaths</div>
-              </div>
-              <div className="text-center p-3 bg-neutral-800 rounded border border-neutral-700">
-                <div className="text-lg font-bold text-blue-400">
-                  {familyGroupedData.reduce((sum, f) => sum + f.classes.length, 0)}
-                </div>
-                <div className="text-xs text-neutral-400">Total de Classes</div>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      )}
+      {/* Estatísticas das Famílias removidas conforme solicitação */}
 
       {/* Controles */}
       <Card className="border-neutral-800 bg-neutral-900">
