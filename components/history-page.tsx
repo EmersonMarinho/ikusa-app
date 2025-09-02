@@ -66,6 +66,43 @@ export function HistoryPage() {
   const [error, setError] = useState<string | null>(null)
   const [showAllGuildStats, setShowAllGuildStats] = useState(false)
 
+  // Formata data em relativo (hoje, há 1 dia, há N dias)
+  const formatRelativeDay = (dateInput: string): string => {
+    try {
+      let targetDate: Date
+      if (/^\d{4}-\d{2}-\d{2}$/.test(dateInput)) {
+        const [y, m, d] = dateInput.split('-').map((v) => parseInt(v, 10))
+        targetDate = new Date(y, m - 1, d)
+      } else {
+        const parsed = new Date(dateInput)
+        targetDate = new Date(parsed.getFullYear(), parsed.getMonth(), parsed.getDate())
+      }
+      const today = new Date()
+      const startOfToday = new Date(today.getFullYear(), today.getMonth(), today.getDate())
+      const startOfTarget = new Date(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate())
+      const diffDays = Math.floor((startOfToday.getTime() - startOfTarget.getTime()) / 86400000)
+      if (diffDays <= 0) return 'hoje'
+      if (diffDays === 1) return 'há 1 dia'
+      return `há ${diffDays} dias`
+    } catch {
+      return dateInput
+    }
+  }
+
+  // Converte qualquer string de data para YYYY-MM-DD no fuso LOCAL
+  const toLocalYMD = (dateInput: string): string => {
+    try {
+      if (/^\d{4}-\d{2}-\d{2}$/.test(dateInput)) return dateInput
+      const d = new Date(dateInput)
+      const y = d.getFullYear()
+      const m = String(d.getMonth() + 1).padStart(2, '0')
+      const day = String(d.getDate()).padStart(2, '0')
+      return `${y}-${m}-${day}`
+    } catch {
+      return dateInput
+    }
+  }
+
   // Estados para GS Lollipop
   const [lollipopGearscore, setLollipopGearscore] = useState<any[]>([])
   const [gsLoading, setGsLoading] = useState(false)
@@ -389,13 +426,12 @@ export function HistoryPage() {
       })
       
       const date = (() => {
-        // Prioridade: event_date > created_at > date
+        // Prioridade: created_at > event_date > date (relativo ao upload)
         let targetDate: string | null = null
-        
-        if (record.event_date) {
-          targetDate = record.event_date
-        } else if (record.created_at) {
+        if (record.created_at) {
           targetDate = record.created_at
+        } else if (record.event_date) {
+          targetDate = record.event_date
         } else if (record.date) {
           targetDate = record.date
         }
@@ -405,21 +441,8 @@ export function HistoryPage() {
           return new Date().toISOString().split('T')[0] // Data atual como fallback
         }
         
-        // Se a data já está no formato YYYY-MM-DD, usa diretamente
-        if (/^\d{4}-\d{2}-\d{2}$/.test(targetDate)) {
-          return targetDate
-        }
-        
-        // Se é uma data ISO com timezone, converte corretamente
-        try {
-          const dateObj = new Date(targetDate)
-          // Ajusta para timezone local para evitar deslocamento
-          const localDate = new Date(dateObj.getTime() - (dateObj.getTimezoneOffset() * 60000))
-          return localDate.toISOString().split('T')[0]
-        } catch (error) {
-          console.warn('⚠️ Erro ao processar data:', targetDate, error)
-          return new Date().toISOString().split('T')[0] // Data atual como fallback
-        }
+        // Normaliza para YYYY-MM-DD no fuso local
+        return toLocalYMD(targetDate)
       })()
       
       console.log('📅 Data extraída:', date)
@@ -681,7 +704,7 @@ export function HistoryPage() {
                 <div className="flex items-center space-x-3">
                   <CalendarIcon className="h-5 w-5 text-blue-400" />
                   <div>
-                    <CardTitle className="text-neutral-100">{new Date(dayStat.date).toLocaleDateString('pt-BR', { weekday: 'long', day: '2-digit', month: '2-digit', year: 'numeric' })}</CardTitle>
+                    <CardTitle className="text-neutral-100">{formatRelativeDay(dayStat.date)}</CardTitle>
                     <p className="text-sm text-neutral-400">
                       {dayStat.recordCount} registro(s) • {dayStat.totalGeral} jogadores
                     </p>
@@ -837,32 +860,11 @@ export function HistoryPage() {
                       // Usa a mesma lógica de processamento de data
                       const recordDate = (() => {
                         let targetDate: string | null = null
-                        
-                        if (record.event_date) {
-                          targetDate = record.event_date
-                        } else if (record.created_at) {
-                          targetDate = record.created_at
-                        } else if (record.date) {
-                          targetDate = record.date
-                        }
-                        
+                        if (record.created_at) targetDate = record.created_at
+                        else if (record.event_date) targetDate = record.event_date
+                        else if (record.date) targetDate = record.date
                         if (!targetDate) return null
-                        
-                        // Se a data já está no formato YYYY-MM-DD, usa diretamente
-                        if (/^\d{4}-\d{2}-\d{2}$/.test(targetDate)) {
-                          return targetDate
-                        }
-                        
-                        // Se é uma data ISO com timezone, converte corretamente
-                        try {
-                          const dateObj = new Date(targetDate)
-                          // Ajusta para timezone local para evitar deslocamento
-                          const localDate = new Date(dateObj.getTime() - (dateObj.getTimezoneOffset() * 60000))
-                          return localDate.toISOString().split('T')[0]
-                        } catch (error) {
-                          console.warn('⚠️ Erro ao processar data para filtro:', targetDate, error)
-                          return null
-                        }
+                        return toLocalYMD(targetDate)
                       })()
                       
                       return recordDate === dayStat.date
@@ -941,35 +943,20 @@ export function HistoryPage() {
                 // Usa a mesma lógica de processamento de data
                 const eventDateIso = (() => {
                   let targetDate: string | null = null
-                  
-                  if (record.event_date) {
-                    targetDate = record.event_date
-                  } else if (record.created_at) {
+                  // Prioriza created_at para título relativo
+                  if (record.created_at) {
                     targetDate = record.created_at
+                  } else if (record.event_date) {
+                    targetDate = record.event_date
                   } else if (record.date) {
                     targetDate = record.date
                   }
                   
                   if (!targetDate) return null
-                  
-                  // Se a data já está no formato YYYY-MM-DD, usa diretamente
-                  if (/^\d{4}-\d{2}-\d{2}$/.test(targetDate)) {
-                    return targetDate
-                  }
-                  
-                  // Se é uma data ISO com timezone, converte corretamente
-                  try {
-                    const dateObj = new Date(targetDate)
-                    // Ajusta para timezone local para evitar deslocamento
-                    const localDate = new Date(dateObj.getTime() - (dateObj.getTimezoneOffset() * 60000))
-                    return localDate.toISOString()
-                  } catch (error) {
-                    console.warn('⚠️ Erro ao processar data no modal:', targetDate, error)
-                    return null
-                  }
+                  return toLocalYMD(targetDate)
                 })()
                 
-                const headerDate = eventDateIso ? new Date(eventDateIso).toLocaleDateString('pt-BR', { weekday: 'long', day: '2-digit', month: '2-digit', year: 'numeric' }) : ''
+                const headerDate = eventDateIso ? formatRelativeDay(eventDateIso) : ''
 
                 return (
                   <div className="space-y-6">
