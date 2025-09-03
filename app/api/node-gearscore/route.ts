@@ -12,7 +12,6 @@ interface NodeGearscoreStats {
   total_participants: number
   average_gearscore: number
   gearscore_distribution: {
-    '700-750': number
     '751-800': number
     '801-850': number
     '851-900': number
@@ -79,8 +78,9 @@ export async function GET(request: NextRequest) {
     const participants = new Set<string>()
     
     // Adiciona nicks de todas as classes
-    Object.values(nodeLog.classes).forEach(classPlayers => {
-      classPlayers.forEach(player => {
+    const classesObj = (nodeLog.classes || {}) as Record<string, Array<{ familia: string }>>
+    Object.values(classesObj).forEach((classPlayers: Array<{ familia: string }>) => {
+      classPlayers.forEach((player: { familia: string }) => {
         participants.add(player.familia)
       })
     })
@@ -157,15 +157,13 @@ export async function GET(request: NextRequest) {
 
     // Distribuição por faixa de gearscore
     const gearscoreDistribution = {
-      '700-750': 0,
       '751-800': 0,
       '801-850': 0,
       '851-900': 0
     }
 
     participantsWithGearscore.forEach(player => {
-      if (player.gearscore >= 700 && player.gearscore <= 750) gearscoreDistribution['700-750']++
-      else if (player.gearscore >= 751 && player.gearscore <= 800) gearscoreDistribution['751-800']++
+      if (player.gearscore >= 751 && player.gearscore <= 800) gearscoreDistribution['751-800']++
       else if (player.gearscore >= 801 && player.gearscore <= 850) gearscoreDistribution['801-850']++
       else if (player.gearscore >= 851 && player.gearscore <= 900) gearscoreDistribution['851-900']++
     })

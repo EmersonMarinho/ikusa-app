@@ -610,6 +610,17 @@ export async function GET(request: NextRequest) {
       }
     }
 
+    // Filtro: mantém apenas jogadores com família presente no alliance_cache
+    const allianceFamilies = new Set(Object.keys(familiaToGuild || {}).map(normalizeFamilia))
+    if (allianceFamilies.size > 0) {
+      for (const [nick, player] of Array.from(allPlayerStats.entries())) {
+        const fam = normalizeFamilia(player.player_familia)
+        if (!fam || !allianceFamilies.has(fam)) {
+          allPlayerStats.delete(nick)
+        }
+      }
+    }
+
     // Calcula K/D ratios
     for (const [, playerStats] of allPlayerStats) {
       playerStats.kd_overall = playerStats.total_deaths > 0 
@@ -699,8 +710,13 @@ export async function POST(request: NextRequest) {
         const nickToFamilia = await getNickToFamiliaMap(baseUrl, targetNicks)
         for (const log of logs) {
           const logPlayerStats = processLogForMonthlyKDA(log, familiaToGuild, nickToFamilia)
-          for (const [playerNick] of logPlayerStats) {
-            activeAlliancePlayers.add(playerNick)
+          // Mantém somente jogadores cuja família esteja no alliance_cache
+          const allianceFamilies = new Set(Object.keys(familiaToGuild || {}).map(normalizeFamilia))
+          for (const [playerNick, stats] of logPlayerStats) {
+            const fam = normalizeFamilia(stats.player_familia)
+            if (allianceFamilies.size === 0 || (fam && allianceFamilies.has(fam))) {
+              activeAlliancePlayers.add(playerNick)
+            }
           }
         }
         
@@ -733,7 +749,13 @@ export async function POST(request: NextRequest) {
       const playerStats = processLogForMonthlyKDA(log, familiaToGuild)
       
       // Salva/atualiza cada jogador
+      const allianceFamilies = new Set(Object.keys(familiaToGuild || {}).map(normalizeFamilia))
       for (const [playerNick, stats] of playerStats) {
+        // Filtra fora da aliança
+        const fam = normalizeFamilia(stats.player_familia)
+        if (allianceFamilies.size > 0 && (!fam || !allianceFamilies.has(fam))) {
+          continue
+        }
         try {
           await updatePlayerMonthlyKDA(stats)
           updatedRecords++

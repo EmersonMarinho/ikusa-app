@@ -48,7 +48,6 @@ interface GuildStats {
   top_players: PlayerGearscore[]
   class_distribution: Record<string, number>
   gearscore_ranges: {
-    '700-750': number
     '751-800': number
     '801-850': number
     '851-900': number

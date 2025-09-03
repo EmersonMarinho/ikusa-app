@@ -31,17 +31,19 @@ async function getCacheFromSupabase(): Promise<AllianceMember[]> {
     const { data, error } = await supabase
       .from('alliance_cache')
       .select('*')
-      .order('lastSeen', { ascending: false });
+      .order('lastseen', { ascending: false });
 
     if (error) {
       console.warn('Erro ao buscar cache do Supabase:', error);
       return [];
     }
 
-    return data?.map(item => ({
-      ...item,
-      lastSeen: new Date(item.lastSeen)
-    })) || [];
+    return (data || []).map((item: any) => ({
+      familia: item.familia,
+      guilda: item.guilda,
+      isMestre: Boolean(item.ismestre ?? item.isMestre ?? false),
+      lastSeen: new Date(item.lastseen ?? item.lastSeen ?? new Date().toISOString()),
+    }));
   } catch (error) {
     console.warn('Erro ao buscar cache do Supabase:', error);
     return [];
@@ -54,12 +56,12 @@ async function saveCacheToSupabase(members: AllianceMember[]): Promise<void> {
     // Limpa cache antigo
     await supabase.from('alliance_cache').delete().neq('id', '00000000-0000-0000-0000-000000000000');
     
-    // Insere novo cache
+    // Insere novo cache (usa snake_case conforme Postgres)
     const cacheData = members.map(member => ({
       familia: member.familia,
       guilda: member.guilda,
-      isMestre: member.isMestre,
-      lastSeen: member.lastSeen.toISOString()
+      ismestre: member.isMestre,
+      lastseen: member.lastSeen.toISOString()
     }));
 
     const { error } = await supabase

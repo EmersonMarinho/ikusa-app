@@ -29,7 +29,6 @@ interface GuildStats {
   top_players: PlayerGearscore[]
   class_distribution: Record<string, number>
   gearscore_ranges: {
-    '700-750': number
     '751-800': number
     '801-850': number
     '851-900': number
@@ -47,6 +46,49 @@ interface GearscoreHistory {
   recorded_at: string
 }
 
+// Helpers de Alliance Cache
+function normalizeFamilia(name: string): string {
+  return (name || '').toString().trim().toLowerCase()
+}
+
+function getBaseUrl(): string {
+  const envUrl = process.env.NEXT_PUBLIC_BASE_URL || ''
+  if (envUrl) return envUrl
+  const vercelHost = process.env.VERCEL_URL || ''
+  if (vercelHost) return `https://${vercelHost}`
+  return 'http://localhost:3000'
+}
+
+async function getAllianceFamiliesSet(): Promise<Set<string>> {
+  // Busca famílias do cache persistido
+  const { data, error } = await supabase
+    .from('alliance_cache')
+    .select('familia')
+
+  let familias: string[] = []
+  if (!error && Array.isArray(data) && data.length > 0) {
+    familias = data.map(r => normalizeFamilia((r as any).familia)).filter(Boolean)
+  }
+
+  // Se vazio, tenta forçar atualização via API e buscar novamente
+  if (familias.length === 0) {
+    try {
+      const baseUrl = getBaseUrl()
+      await fetch(`${baseUrl}/api/alliance-cache`, { method: 'POST', cache: 'no-store' })
+      const retry = await supabase
+        .from('alliance_cache')
+        .select('familia')
+      if (!retry.error && Array.isArray(retry.data) && retry.data.length > 0) {
+        familias = retry.data.map((r: any) => normalizeFamilia(r.familia)).filter(Boolean)
+      }
+    } catch {
+      // Ignore e segue sem bloquear
+    }
+  }
+
+  return new Set(familias)
+}
+
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
@@ -56,6 +98,9 @@ export async function GET(request: NextRequest) {
     const order = searchParams.get('order') || 'desc'
     const includeHistory = searchParams.get('history') === 'true'
     const userId = searchParams.get('userId')
+
+    // Carrega famílias válidas da aliança
+    const allianceFamilies = await getAllianceFamiliesSet()
 
     // Busca players com gearscore mais recente
     let query = supabase
@@ -89,7 +134,7 @@ export async function GET(request: NextRequest) {
     }
 
     // Processa os dados para o formato esperado
-    const players: PlayerGearscore[] = playersData?.map(player => {
+    const playersUnfiltered: PlayerGearscore[] = playersData?.map(player => {
       // Pega o gearscore mais recente do histórico
       const gearscoreHistory = player.gearscore_history || []
       const latestGearscore = gearscoreHistory.length > 0 
@@ -130,7 +175,16 @@ export async function GET(request: NextRequest) {
         created_at: player.created_at,
         last_updated: latestGearscore.recorded_at
       }
-    }).filter(player => player.gearscore > 0) || [] // Remove players sem gearscore
+    }) || []
+
+    // Filtra: remove players sem gearscore e fora da aliança
+    const players: PlayerGearscore[] = playersUnfiltered
+      .filter(player => player.gearscore > 0)
+      .filter(player => {
+        // Se não conseguimos obter o cache (vazio), não bloqueia
+        if (allianceFamilies.size === 0) return true
+        return allianceFamilies.has(normalizeFamilia(player.family_name))
+      })
 
     // Aplica ordenação
     const validSortFields = ['gearscore', 'family_name', 'main_class', 'ap', 'aap', 'dp']
@@ -196,15 +250,13 @@ export async function GET(request: NextRequest) {
 
     // Distribuição por faixa de gearscore (apenas dos players válidos para estatísticas)
     const gearscoreRanges = {
-      '700-750': 0,
       '751-800': 0,
       '801-850': 0,
       '851-900': 0,
     }
 
     playersForStats.forEach(player => {
-      if (player.gearscore >= 700 && player.gearscore <= 750) gearscoreRanges['700-750']++
-      else if (player.gearscore >= 751 && player.gearscore <= 800) gearscoreRanges['751-800']++
+      if (player.gearscore >= 751 && player.gearscore <= 800) gearscoreRanges['751-800']++
       else if (player.gearscore >= 801 && player.gearscore <= 850) gearscoreRanges['801-850']++
       else if (player.gearscore >= 851 && player.gearscore <= 900) gearscoreRanges['851-900']++
     })
@@ -307,6 +359,9 @@ export async function POST(request: NextRequest) {
         }, { status: 400 })
       }
 
+      // Carrega famílias válidas
+      const allianceFamilies = await getAllianceFamiliesSet()
+
       let successCount = 0
       let errorCount = 0
       const errors: string[] = []
@@ -319,6 +374,13 @@ export async function POST(request: NextRequest) {
           if (!user_id || !family_name || !character_name || !main_class || !ap || !aap || !dp) {
             errorCount++
             errors.push(`Player ${family_name}: Dados obrigatórios faltando`)
+            continue
+          }
+
+          // Ignora jogadores fora da aliança quando cache disponível
+          if (allianceFamilies.size > 0 && !allianceFamilies.has(normalizeFamilia(family_name))) {
+            errorCount++
+            errors.push(`Player ${family_name}: fora da aliança, ignorado`)
             continue
           }
 
@@ -392,6 +454,16 @@ export async function POST(request: NextRequest) {
       }
 
       const gearscore = Math.max(ap, aap) + dp
+
+      // Carrega famílias válidas e bloqueia fora da aliança, se possível
+      const allianceFamilies = await getAllianceFamiliesSet()
+      if (allianceFamilies.size > 0 && !allianceFamilies.has(normalizeFamilia(family_name))) {
+        return NextResponse.json({
+          success: false,
+          error: 'Família fora da aliança',
+          message: `A família "${family_name}" não pertence à aliança no momento`
+        }, { status: 400 })
+      }
 
       // 1. Insere/atualiza player na tabela players
       const { data: playerData, error: playerError } = await supabase
