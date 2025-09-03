@@ -15,12 +15,27 @@ export const runtime = 'nodejs'
 type FamiliaToGuildMap = Record<string, 'Manifest' | 'Allyance' | 'Grand_Order'>
 type NickToFamiliaMap = Record<string, string>
 
+function stripDiacritics(text: string): string {
+  return text.normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+}
+
 function normalizeFamilia(name: string): string {
-  return (name || '').toString().trim().toLowerCase()
+  const raw = (name || '').toString()
+  const noAccents = stripDiacritics(raw)
+  return noAccents
+    .toLowerCase()
+    .trim()
+    .replace(/\s+/g, ' ')        // colapsa múltiplos espaços
+    .replace(/[^a-z0-9 ]/g, '')   // remove pontuação e símbolos
 }
 
 function normalizeNick(name: string): string {
-  return (name || '').toString().trim().toLowerCase()
+  const raw = (name || '').toString()
+  const noAccents = stripDiacritics(raw)
+  return noAccents
+    .toLowerCase()
+    .trim()
+    .replace(/\s+/g, ' ')
 }
 
 function isMockFamilia(name: string): boolean {
