@@ -30,20 +30,23 @@ async function getCacheFromSupabase(): Promise<AllianceMember[]> {
   try {
     const { data, error } = await supabase
       .from('alliance_cache')
-      .select('*')
-      .order('lastseen', { ascending: false });
+      .select('*');
 
     if (error) {
       console.warn('Erro ao buscar cache do Supabase:', error);
       return [];
     }
 
-    return (data || []).map((item: any) => ({
+    const mapped = (data || []).map((item: any) => ({
       familia: item.familia,
       guilda: item.guilda,
       isMestre: Boolean(item.ismestre ?? item.isMestre ?? false),
       lastSeen: new Date(item.lastseen ?? item.lastSeen ?? new Date().toISOString()),
     }));
+
+    // Ordena em memória por lastSeen desc para evitar depender do nome da coluna no banco
+    mapped.sort((a, b) => b.lastSeen.getTime() - a.lastSeen.getTime())
+    return mapped
   } catch (error) {
     console.warn('Erro ao buscar cache do Supabase:', error);
     return [];
@@ -56,22 +59,37 @@ async function saveCacheToSupabase(members: AllianceMember[]): Promise<void> {
     // Limpa cache antigo
     await supabase.from('alliance_cache').delete().neq('id', '00000000-0000-0000-0000-000000000000');
     
-    // Insere novo cache (usa snake_case conforme Postgres)
-    const cacheData = members.map(member => ({
+    // Monta payloads para ambos esquemas de coluna
+    const cacheDataSnake = members.map(member => ({
       familia: member.familia,
       guilda: member.guilda,
       ismestre: member.isMestre,
       lastseen: member.lastSeen.toISOString()
     }));
+    const cacheDataCamel = members.map(member => ({
+      familia: member.familia,
+      guilda: member.guilda,
+      isMestre: member.isMestre,
+      lastSeen: member.lastSeen.toISOString()
+    }));
 
-    const { error } = await supabase
+    // Tenta snake_case primeiro
+    let { error } = await supabase
       .from('alliance_cache')
-      .insert(cacheData);
+      .insert(cacheDataSnake);
+
+    if (error) {
+      console.warn('Falha ao salvar com snake_case, tentando camelCase...', error)
+      const retry = await supabase
+        .from('alliance_cache')
+        .insert(cacheDataCamel)
+      error = retry.error
+    }
 
     if (error) {
       console.error('Erro ao salvar cache no Supabase:', error);
     } else {
-      console.log('✅ Cache salvo no Supabase:', cacheData.length, 'membros');
+      console.log('✅ Cache salvo no Supabase:', members.length, 'membros');
     }
   } catch (error) {
     console.error('Erro ao salvar cache no Supabase:', error);
