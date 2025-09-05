@@ -466,6 +466,27 @@ export function HistoryPage() {
 
   // Quantidade visível de blocos Lollipop (mostra últimos N)
   const [lollipopBlocksVisible, setLollipopBlocksVisible] = useState(5)
+  // Mapa família -> guilda (para filtros como "Sem Manifest")
+  const [familyToGuild, setFamilyToGuild] = useState<Record<string, string>>({})
+
+  useEffect(() => {
+    const loadAlliance = async () => {
+      try {
+        const res = await fetch('/api/alliance-cache', { cache: 'no-store' as RequestCache })
+        const data = await res.json()
+        if (data?.success && Array.isArray(data.members)) {
+          const map: Record<string, string> = {}
+          for (const m of data.members) {
+            if (m?.familia) map[String(m.familia).toLowerCase()] = m.guilda
+          }
+          setFamilyToGuild(map)
+        }
+      } catch (e) {
+        // silencioso
+      }
+    }
+    loadAlliance()
+  }, [])
 
   // Filter records based on selected guilds
   const filteredRecords = useMemo(() => {
@@ -2048,6 +2069,121 @@ export function HistoryPage() {
                                       })()}
                                     </div>
                                     <p className="text-xs text-neutral-400 mt-1">Apenas com GS válido (excluindo Shai e Defesa)</p>
+                                  </CardContent>
+                                </Card>
+
+                                {/* GS Allyance */}
+                                <Card className="bg-neutral-800 border-neutral-700">
+                                  <CardHeader className="pb-2">
+                                    <CardTitle className="text-sm font-medium text-neutral-300">GS Allyance</CardTitle>
+                                  </CardHeader>
+                                  <CardContent>
+                                    {(() => {
+                                      const playersWithGS = lollipopGearscore.filter(p => p.gearscore > 0)
+                                      const valid = playersWithGS.filter(player => {
+                                        if (player.main_class === 'Shai') return false
+                                        const defensePlayers = ['Teste','Lagswitch','GarciaGil','OAT','Haleluya','Fberg','Dxvn','ZeDoBambu','KingThePower']
+                                        if (defensePlayers.includes(player.family_name)) return false
+                                        const guild = familyToGuild[player.family_name?.toLowerCase?.() || '']
+                                        return guild === 'Allyance'
+                                      })
+                                      const count = valid.length
+                                      const avg = count === 0 ? 0 : Math.round(valid.reduce((s,p)=> s + p.gearscore, 0) / count)
+                                      return (
+                                        <>
+                                          <div className="text-2xl font-bold text-neutral-100">{avg}</div>
+                                          <p className="text-xs text-neutral-400 mt-1">Média apenas players da Allyance</p>
+                                        </>
+                                      )
+                                    })()}
+                                  </CardContent>
+                                </Card>
+
+                                {/* GS Grand_Order */}
+                                <Card className="bg-neutral-800 border-neutral-700">
+                                  <CardHeader className="pb-2">
+                                    <CardTitle className="text-sm font-medium text-neutral-300">GS Grand_Order</CardTitle>
+                                  </CardHeader>
+                                  <CardContent>
+                                    {(() => {
+                                      const playersWithGS = lollipopGearscore.filter(p => p.gearscore > 0)
+                                      const valid = playersWithGS.filter(player => {
+                                        if (player.main_class === 'Shai') return false
+                                        const defensePlayers = ['Teste','Lagswitch','GarciaGil','OAT','Haleluya','Fberg','Dxvn','ZeDoBambu','KingThePower']
+                                        if (defensePlayers.includes(player.family_name)) return false
+                                        const guild = familyToGuild[player.family_name?.toLowerCase?.() || '']
+                                        return guild === 'Grand_Order'
+                                      })
+                                      const count = valid.length
+                                      const avg = count === 0 ? 0 : Math.round(valid.reduce((s,p)=> s + p.gearscore, 0) / count)
+                                      return (
+                                        <>
+                                          <div className="text-2xl font-bold text-neutral-100">{avg}</div>
+                                          <p className="text-xs text-neutral-400 mt-1">Média apenas players da Grand_Order</p>
+                                        </>
+                                      )
+                                    })()}
+                                  </CardContent>
+                                </Card>
+
+                                {/* GS Manifest */}
+                                <Card className="bg-neutral-800 border-neutral-700">
+                                  <CardHeader className="pb-2">
+                                    <CardTitle className="text-sm font-medium text-neutral-300">GS Manifest</CardTitle>
+                                  </CardHeader>
+                                  <CardContent>
+                                    {(() => {
+                                      const playersWithGS = lollipopGearscore.filter(p => p.gearscore > 0)
+                                      const valid = playersWithGS.filter(player => {
+                                        if (player.main_class === 'Shai') return false
+                                        const defensePlayers = ['Teste','Lagswitch','GarciaGil','OAT','Haleluya','Fberg','Dxvn','ZeDoBambu','KingThePower']
+                                        if (defensePlayers.includes(player.family_name)) return false
+                                        const guild = familyToGuild[player.family_name?.toLowerCase?.() || '']
+                                        return guild === 'Manifest'
+                                      })
+                                      const count = valid.length
+                                      const avg = count === 0 ? 0 : Math.round(valid.reduce((s,p)=> s + p.gearscore, 0) / count)
+                                      return (
+                                        <>
+                                          <div className="text-2xl font-bold text-neutral-100">{avg}</div>
+                                          <p className="text-xs text-neutral-400 mt-1">Média apenas players da Manifest</p>
+                                        </>
+                                      )
+                                    })()}
+                                  </CardContent>
+                                </Card>
+
+                                {/* GS Sem Manifest */}
+                                <Card className="bg-neutral-800 border-neutral-700">
+                                  <CardHeader className="pb-2">
+                                    <CardTitle className="text-sm font-medium text-neutral-300">GS Sem Manifest</CardTitle>
+                                  </CardHeader>
+                                  <CardContent>
+                                    <div className="text-2xl font-bold text-neutral-100">
+                                      {(() => {
+                                        // Mesma filtragem de GS válido + remove Manifest
+                                        const playersWithGS = lollipopGearscore.filter(p => p.gearscore > 0)
+                                        // 1) aplica filtros base (Shai e Defesa)
+                                        const baseValid = playersWithGS.filter(player => {
+                                          if (player.main_class === 'Shai') return false
+                                          const defensePlayers = [
+                                            'Teste','Lagswitch','GarciaGil','OAT','Haleluya','Fberg','Dxvn','ZeDoBambu','KingThePower'
+                                          ]
+                                          if (defensePlayers.includes(player.family_name)) return false
+                                          return true
+                                        })
+                                        // 2) identifica Manifest que serão excluídos
+                                        const manifestExcluded = baseValid.filter(p => (familyToGuild[p.family_name?.toLowerCase?.() || ''] === 'Manifest'))
+                                        if (manifestExcluded.length > 0) {
+                                          console.log('🟡 Manifest excluídos (GS Lollipop):', manifestExcluded.map(p => `${p.family_name} (${p.gearscore})`))
+                                        }
+                                        // 3) aplica exclusão de Manifest
+                                        const validPlayers = baseValid.filter(p => (familyToGuild[p.family_name?.toLowerCase?.() || ''] !== 'Manifest'))
+                                        if (validPlayers.length === 0) return 0
+                                        return Math.round(validPlayers.reduce((sum, p) => sum + p.gearscore, 0) / validPlayers.length)
+                                      })()}
+                                    </div>
+                                    <p className="text-xs text-neutral-400 mt-1">Média sem players da Manifest</p>
                                   </CardContent>
                                 </Card>
                               </div>
