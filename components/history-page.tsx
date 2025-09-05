@@ -398,6 +398,75 @@ export function HistoryPage() {
     return filtered.sort((a,b)=> (order.get(a.toLowerCase()) ?? 99) - (order.get(b.toLowerCase()) ?? 99))
   }, [historyData])
 
+  // Blocos de 15 registros focados na Lollipop (ordem cronológica por event_date/created_at)
+  const lollipopBlocks = useMemo(() => {
+    try {
+      // Filtra apenas registros onde Lollipop participou
+      const participated = historyData.filter((record: any) => {
+        const gs = (record.guilds || [record.guild] || []).map((g: string) => (g || '').toLowerCase())
+        return gs.includes('lollipop')
+      })
+      // Ordena por data do evento (fallbacks)
+      const byDate = [...participated].sort((a: any, b: any) => {
+        const da = new Date(a.event_date || a.created_at || a.date || 0).getTime()
+        const db = new Date(b.event_date || b.created_at || b.date || 0).getTime()
+        return da - db
+      })
+      // Quebra em blocos de 5
+      const blocks: Array<{
+        index: number
+        from: string
+        to: string
+        recordCount: number
+        kills: number
+        deaths: number
+        kd: number
+        killsVsChernobyl: number
+        deathsVsChernobyl: number
+        kdVsChernobyl: number
+      }> = []
+      for (let i = 0; i < byDate.length; i += 5) {
+        const slice = byDate.slice(i, i + 5)
+        if (slice.length === 0) continue
+        let kills = 0
+        let deaths = 0
+        let killsVsChernobyl = 0
+        let deathsVsChernobyl = 0
+        for (const r of slice) {
+          const kbg = r.kills_by_guild || r.killsByGuild || {}
+          const dbg = r.deaths_by_guild || r.deathsByGuild || {}
+          // Aceita variações de chave
+          const k = kbg['Lollipop'] ?? kbg['lollipop'] ?? 0
+          const d = dbg['Lollipop'] ?? dbg['lollipop'] ?? 0
+          kills += Number(k) || 0
+          deaths += Number(d) || 0
+
+          // Vs específicos pela matriz de kills
+          const km = r.kills_matrix || r.killsMatrix || {}
+          const rowLollipop = km['Lollipop'] || km['lollipop'] || km['LOLLIPOP'] || {}
+          const rowChernobyl = km['Chernobyl'] || km['chernobyl'] || km['CHERNOBYL'] || {}
+          // Kills da Lollipop contra adversário
+          killsVsChernobyl += Number(rowLollipop['Chernobyl'] ?? rowLollipop['chernobyl'] ?? 0) || 0
+          // Deaths da Lollipop contra adversário = kills que o adversário fez na Lollipop
+          deathsVsChernobyl += Number(rowChernobyl['Lollipop'] ?? rowChernobyl['lollipop'] ?? 0) || 0
+        }
+        const kd = deaths > 0 ? kills / deaths : (kills > 0 ? Infinity : 0)
+        const kdVsChernobyl = deathsVsChernobyl > 0 ? (killsVsChernobyl / deathsVsChernobyl) : (killsVsChernobyl > 0 ? Infinity : 0)
+        const from = toLocalYMD(slice[0].event_date || slice[0].created_at || slice[0].date || '')
+        const to = toLocalYMD(slice[slice.length - 1].event_date || slice[slice.length - 1].created_at || slice[slice.length - 1].date || '')
+        blocks.push({ index: Math.floor(i / 5) + 1, from, to, recordCount: slice.length, kills, deaths, kd, 
+          killsVsChernobyl, deathsVsChernobyl, kdVsChernobyl,
+          })
+      }
+      return blocks
+    } catch {
+      return []
+    }
+  }, [historyData])
+
+  // Quantidade visível de blocos Lollipop (mostra últimos N)
+  const [lollipopBlocksVisible, setLollipopBlocksVisible] = useState(5)
+
   // Filter records based on selected guilds
   const filteredRecords = useMemo(() => {
     console.log('🔍 Filtrando registros. Total de registros:', historyData.length)
@@ -809,7 +878,68 @@ export function HistoryPage() {
         </CardContent>
       </Card>
 
+      {/* Histórico Lollipop (blocos de 5) */}
+      {lollipopBlocks.length > 0 && (
+        <Card className="border-neutral-800 bg-neutral-900 mt-6">
+          <CardHeader>
+            <CardTitle className="text-neutral-100 flex items-center justify-between">
+              <span className="flex items-center">
+                <TrendingUpIcon className="h-5 w-5 mr-2" />
+                Histórico Lollipop (blocos de 5)
+              </span>
+              <div className="text-sm text-neutral-400">
+                Mostrando últimos {Math.min(lollipopBlocksVisible, lollipopBlocks.length)} de {lollipopBlocks.length}
+              </div>
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-neutral-700 text-neutral-400">
+                    <th className="text-left py-2 px-2">Bloco</th>
+                    <th className="text-left py-2 px-2">Período</th>
+                    <th className="text-center py-2 px-2">Registros</th>
+                    <th className="text-center py-2 px-2">Kills</th>
+                    <th className="text-center py-2 px-2">Deaths</th>
+                    <th className="text-center py-2 px-2">K/D</th>
+                    <th className="text-center py-2 px-2">Kills vs Chernobyl</th>
+                    <th className="text-center py-2 px-2">Deaths vs Chernobyl</th>
+                    <th className="text-center py-2 px-2">K/D vs Chernobyl</th>
+                    
+                  </tr>
+                </thead>
+                <tbody>
+                  {lollipopBlocks.slice(-lollipopBlocksVisible).map((b) => (
+                    <tr key={b.index} className="border-b border-neutral-800 hover:bg-neutral-800">
+                      <td className="py-2 px-2 text-neutral-200 font-medium">#{b.index}</td>
+                      <td className="py-2 px-2 text-neutral-300">{b.from} → {b.to}</td>
+                      <td className="py-2 px-2 text-center text-neutral-300">{b.recordCount}</td>
+                      <td className="py-2 px-2 text-center text-green-400 font-medium">{b.kills}</td>
+                      <td className="py-2 px-2 text-center text-red-400 font-medium">{b.deaths}</td>
+                      <td className="py-2 px-2 text-center font-semibold">{b.kd===Infinity? '∞' : b.kd.toFixed(2)}</td>
+                      <td className="py-2 px-2 text-center text-green-400">{b.killsVsChernobyl}</td>
+                      <td className="py-2 px-2 text-center text-red-400">{b.deathsVsChernobyl}</td>
+                      <td className="py-2 px-2 text-center font-semibold">{b.kdVsChernobyl===Infinity? '∞' : b.kdVsChernobyl.toFixed(2)}</td>
+                      
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {lollipopBlocksVisible < lollipopBlocks.length && (
+                <div className="flex justify-center mt-4">
+                  <Button variant="outline" size="sm" className="border-neutral-700 text-neutral-200" onClick={() => setLollipopBlocksVisible(v => v + 5)}>
+                    Ver mais
+                  </Button>
+                </div>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Jogadores Chernobyl (resumo compacto com opção de expandir) */}
+      {/*
       <Card className="border-neutral-800 bg-neutral-900">
         <CardHeader>
           <CardTitle className="text-neutral-100 flex items-center justify-between">
@@ -967,6 +1097,7 @@ export function HistoryPage() {
           </CardTitle>
         </CardHeader>
       </Card>
+      */}
 
       {/* Modal Chernobyl */}
       <Dialog open={showChernModal} onOpenChange={setShowChernModal}>
