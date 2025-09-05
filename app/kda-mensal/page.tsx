@@ -132,6 +132,27 @@ function KDAMensalPageContent() {
   // Filtro de classe na tabela principal
   const [tableClass, setTableClass] = useState<string>('all')
 
+  // Ordenação da tabela de jogadores
+  type SortKey = 'player_nick' | 'player_familia' | 'guilda' | 'classes' | 'total_kills' | 'total_deaths' | 'kd_overall' | 'kd_vs_chernobyl' | 'kd_vs_others'
+  const [sortKey, setSortKey] = useState<SortKey>('kd_overall')
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc')
+
+  const toggleSort = (key: SortKey) => {
+    if (key === sortKey) {
+      setSortDir(prev => prev === 'asc' ? 'desc' : 'asc')
+    } else {
+      // Padrão: texto ascendente, números descendente
+      const isText = key === 'player_nick' || key === 'player_familia' || key === 'guilda' || key === 'classes'
+      setSortKey(key)
+      setSortDir(isText ? 'asc' : 'desc')
+    }
+  }
+
+  const renderSortIndicator = (key: SortKey) => {
+    if (key !== sortKey) return null
+    return <span className="ml-1 text-xs">{sortDir === 'asc' ? '↑' : '↓'}</span>
+  }
+
   // Carrega membros da aliança
   const loadAllianceMembers = async () => {
     try {
@@ -580,15 +601,33 @@ function KDAMensalPageContent() {
                   <table className="w-full text-sm">
                     <thead>
                       <tr className="border-b border-neutral-700">
-                        <th className="text-left p-2 text-neutral-300">Jogador</th>
-                        <th className="text-left p-2 text-neutral-300">Família</th>
-                        <th className="text-left p-2 text-neutral-300">Guilda</th>
-                        <th className="text-center p-2 text-neutral-300">Classes</th>
-                        <th className="text-center p-2 text-neutral-300">Kills</th>
-                        <th className="text-center p-2 text-neutral-300">Deaths</th>
-                        <th className="text-center p-2 text-neutral-300">K/D Geral</th>
-                        <th className="text-center p-2 text-neutral-300">K/D vs Chernobyl</th>
-                        <th className="text-center p-2 text-neutral-300">K/D vs Outros</th>
+                        <th onClick={() => toggleSort('player_nick')} className="text-left p-2 text-neutral-300 cursor-pointer select-none">
+                          <div className="inline-flex items-center">Jogador {renderSortIndicator('player_nick')}</div>
+                        </th>
+                        <th onClick={() => toggleSort('player_familia')} className="text-left p-2 text-neutral-300 cursor-pointer select-none">
+                          <div className="inline-flex items-center">Família {renderSortIndicator('player_familia')}</div>
+                        </th>
+                        <th onClick={() => toggleSort('guilda')} className="text-left p-2 text-neutral-300 cursor-pointer select-none">
+                          <div className="inline-flex items-center">Guilda {renderSortIndicator('guilda')}</div>
+                        </th>
+                        <th onClick={() => toggleSort('classes')} className="text-center p-2 text-neutral-300 cursor-pointer select-none">
+                          <div className="inline-flex items-center">Classes {renderSortIndicator('classes')}</div>
+                        </th>
+                        <th onClick={() => toggleSort('total_kills')} className="text-center p-2 text-neutral-300 cursor-pointer select-none">
+                          <div className="inline-flex items-center">Kills {renderSortIndicator('total_kills')}</div>
+                        </th>
+                        <th onClick={() => toggleSort('total_deaths')} className="text-center p-2 text-neutral-300 cursor-pointer select-none">
+                          <div className="inline-flex items-center">Deaths {renderSortIndicator('total_deaths')}</div>
+                        </th>
+                        <th onClick={() => toggleSort('kd_overall')} className="text-center p-2 text-neutral-300 cursor-pointer select-none">
+                          <div className="inline-flex items-center">K/D Geral {renderSortIndicator('kd_overall')}</div>
+                        </th>
+                        <th onClick={() => toggleSort('kd_vs_chernobyl')} className="text-center p-2 text-neutral-300 cursor-pointer select-none">
+                          <div className="inline-flex items-center">K/D vs Chernobyl {renderSortIndicator('kd_vs_chernobyl')}</div>
+                        </th>
+                        <th onClick={() => toggleSort('kd_vs_others')} className="text-center p-2 text-neutral-300 cursor-pointer select-none">
+                          <div className="inline-flex items-center">K/D vs Outros {renderSortIndicator('kd_vs_others')}</div>
+                        </th>
                       </tr>
                     </thead>
                     <tbody>
@@ -605,14 +644,45 @@ function KDAMensalPageContent() {
                           return true
                         })
                         .sort((a, b) => {
-                          const pick = (p: any) => filters.metric === 'overall' ? p.kd_overall : filters.metric === 'vs_chernobyl' ? p.kd_vs_chernobyl : p.kd_vs_others
-                          const ka = pick(a)
-                          const kb = pick(b)
-                          if (ka === kb) return b.total_kills - a.total_kills
-                          // Ordena Infinity no topo
-                          if (!isFinite(kb) && isFinite(ka)) return 1
-                          if (!isFinite(ka) && isFinite(kb)) return -1
-                          return kb - ka
+                          // Extrai valores baseados no sortKey
+                          const getClassesText = (p: any) => p.classes_played.map((c: any) => c.classe).sort((x: string, y: string) => x.localeCompare(y, 'pt', { sensitivity: 'base' })).join(', ')
+                          const av = (
+                            sortKey === 'player_nick' ? a.player_nick :
+                            sortKey === 'player_familia' ? a.player_familia :
+                            sortKey === 'guilda' ? a.guilda :
+                            sortKey === 'classes' ? getClassesText(a) :
+                            sortKey === 'total_kills' ? a.total_kills :
+                            sortKey === 'total_deaths' ? a.total_deaths :
+                            sortKey === 'kd_overall' ? a.kd_overall :
+                            sortKey === 'kd_vs_chernobyl' ? a.kd_vs_chernobyl :
+                            a.kd_vs_others
+                          ) as any
+                          const bv = (
+                            sortKey === 'player_nick' ? b.player_nick :
+                            sortKey === 'player_familia' ? b.player_familia :
+                            sortKey === 'guilda' ? b.guilda :
+                            sortKey === 'classes' ? getClassesText(b) :
+                            sortKey === 'total_kills' ? b.total_kills :
+                            sortKey === 'total_deaths' ? b.total_deaths :
+                            sortKey === 'kd_overall' ? b.kd_overall :
+                            sortKey === 'kd_vs_chernobyl' ? b.kd_vs_chernobyl :
+                            b.kd_vs_others
+                          ) as any
+
+                          // Comparação
+                          const isText = typeof av === 'string' || typeof bv === 'string'
+                          if (isText) {
+                            const cmp = String(av).localeCompare(String(bv), 'pt', { sensitivity: 'base' })
+                            if (cmp !== 0) return sortDir === 'asc' ? cmp : -cmp
+                            // desempate por nick
+                            return a.player_nick.localeCompare(b.player_nick, 'pt', { sensitivity: 'base' })
+                          }
+
+                          // Números (tratando Infinity automaticamente)
+                          const cmpNum = sortDir === 'asc' ? (Number(av) - Number(bv)) : (Number(bv) - Number(av))
+                          if (cmpNum !== 0) return cmpNum
+                          // Desempate: mais kills primeiro
+                          return b.total_kills - a.total_kills
                         })
                         .map((player, index) => (
                         <tr key={index} className="border-b border-neutral-800 hover:bg-neutral-800">
