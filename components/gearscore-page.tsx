@@ -79,6 +79,8 @@ export function GearscorePageComponent() {
   const [familyToGuild, setFamilyToGuild] = useState<Record<string, string>>({})
   const [guildAverages, setGuildAverages] = useState<Record<string, { totalPlayers: number; averageGS: number }>>({})
   const [guildFilter, setGuildFilter] = useState<'all' | 'Manifest' | 'Allyance' | 'Grand_Order'>('all')
+  const [classFilter, setClassFilter] = useState<'all' | string>('all')
+  const availableClasses = Array.from(new Set(players.map(p => p.main_class))).sort()
   
   // Estados para upload de gearscore
   const [uploadFile, setUploadFile] = useState<File | null>(null)
@@ -248,6 +250,7 @@ export function GearscorePageComponent() {
       player.character_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       player.main_class.toLowerCase().includes(searchTerm.toLowerCase())
     if (!matchesSearch) return false
+    if (classFilter !== 'all' && player.main_class !== classFilter) return false
     if (guildFilter === 'all') return true
     const g = familyToGuild[player.family_name?.toLowerCase?.() || '']
     return g === guildFilter
@@ -594,6 +597,18 @@ export function GearscorePageComponent() {
                         <SelectItem value="Manifest">Manifest</SelectItem>
                         <SelectItem value="Allyance">Allyance</SelectItem>
                         <SelectItem value="Grand_Order">Grand_Order</SelectItem>
+                      </SelectContent>
+                    </Select>
+
+                    <Select value={classFilter} onValueChange={(v: any) => setClassFilter(v)}>
+                      <SelectTrigger className="w-56">
+                        <SelectValue placeholder="Filtrar por classe" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">Todas as Classes</SelectItem>
+                        {availableClasses.map(cls => (
+                          <SelectItem key={cls} value={cls}>{cls}</SelectItem>
+                        ))}
                       </SelectContent>
                     </Select>
 
