@@ -386,15 +386,14 @@ export function HistoryPage() {
         guilds.add(record.guild)
       }
     })
-    // Mantém somente as principais (case-insensitive): Lollipop, Harvest, Chernobyl, Kiev
-    const main = ['lollipop','harvest','chernobyl','kiev']
+    // Mantém somente as principais (case-insensitive): Lollipop, Chernobyl, Kiev
+    const main = ['lollipop','chernobyl','kiev']
     const filtered = Array.from(guilds).filter(g => main.includes(g.toLowerCase()))
     // Ordena na ordem desejada
     const order = new Map<string, number>([
       ['lollipop', 0],
-      ['harvest', 1],
-      ['chernobyl', 2],
-      ['kiev', 3],
+      ['chernobyl', 1],
+      ['kiev', 2],
     ])
     return filtered.sort((a,b)=> (order.get(a.toLowerCase()) ?? 99) - (order.get(b.toLowerCase()) ?? 99))
   }, [historyData])
@@ -766,12 +765,11 @@ export function HistoryPage() {
         <CardContent>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
             {(() => {
-              const mainLower = new Set(['lollipop','harvest','chernobyl','kiev'])
+              const mainLower = new Set(['lollipop','chernobyl','kiev'])
               const order = new Map<string, number>([
                 ['lollipop', 0],
-                ['harvest', 1],
-                ['chernobyl', 2],
-                ['kiev', 3],
+                ['chernobyl', 1],
+                ['kiev', 2],
               ])
               const list = (showAllGuildStats
                 ? guildStats
@@ -788,10 +786,7 @@ export function HistoryPage() {
                     <span className="text-neutral-400">Registros:</span>
                     <span className="text-neutral-200">{guildStat.recordCount}</span>
                   </div>
-                  <div className="flex justify-between">
-                    <span className="text-neutral-400">Total Geral:</span>
-                    <span className="text-neutral-200">{guildStat.totalGeral}</span>
-                  </div>
+                  
                   <div className="flex justify-between">
                     <span className="text-neutral-400">Total Kills:</span>
                     <span className="text-green-400">{guildStat.totalKills}</span>
@@ -1124,7 +1119,7 @@ export function HistoryPage() {
                   <div>
                     <CardTitle className="text-neutral-100">{formatRelativeDay(dayStat.date)}</CardTitle>
                     <p className="text-sm text-neutral-400">
-                      {dayStat.recordCount} registro(s) • {dayStat.totalGeral} jogadores
+                      {dayStat.recordCount} registro(s)
                     </p>
                   </div>
                 </div>
@@ -1308,7 +1303,7 @@ export function HistoryPage() {
                           <div>
                             <p className="text-neutral-200 font-medium">{record.arquivo_nome || record.filename}</p>
                             <p className="text-sm text-neutral-400">
-                              {record.guilds ? `${record.guilds.length} guilda(s)` : record.guild} • {record.total_geral || record.totalGeral} jogadores
+                              {record.guilds ? `${record.guilds.length} guilda(s)` : record.guild}
                             </p>
                             {/* Território e Node */}
                             <div className="flex items-center space-x-2 mt-1">
