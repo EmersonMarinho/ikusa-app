@@ -529,6 +529,10 @@ export async function GET(request: NextRequest) {
     }
     const familiaToGuild = await getAllianceFamilyMap(baseUrl)
     console.log(`👥 Mapa família->guilda: ${Object.keys(familiaToGuild).length} famílias mapeadas`)
+    const isAllianceCacheEmpty = Object.keys(familiaToGuild || {}).length === 0
+    if (isAllianceCacheEmpty) {
+      console.warn('⚠️ alliance-cache vazio na Vercel. Ativando fallback de filtro por guilda conhecida.')
+    }
     
     const targetNicks = collectTargetNicksFromLogs(logs)
     console.log(`🎯 Nicks alvo para busca: ${targetNicks.length}`)
@@ -610,7 +614,16 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // Filtro: mantém apenas jogadores com família presente no alliance_cache
+    // Logs de distribuição antes do filtro
+    const totalBeforeFilter = allPlayerStats.size
+    const byGuildBefore: Record<string, number> = {}
+    for (const [, p] of allPlayerStats) {
+      const g = (p as any).guilda || 'Unknown'
+      byGuildBefore[g] = (byGuildBefore[g] || 0) + 1
+    }
+    console.log('📊 Distribuição por guilda (antes do filtro):', byGuildBefore)
+
+    // Filtro: mantém apenas jogadores da aliança
     const allianceFamilies = new Set(Object.keys(familiaToGuild || {}).map(normalizeFamilia))
     if (allianceFamilies.size > 0) {
       for (const [nick, player] of Array.from(allPlayerStats.entries())) {
@@ -619,7 +632,27 @@ export async function GET(request: NextRequest) {
           allPlayerStats.delete(nick)
         }
       }
+      console.log(`🧹 Filtro por família do alliance-cache aplicado. Famílias no cache: ${allianceFamilies.size}`)
+    } else {
+      // Fallback quando o alliance-cache está vazio: filtra por guilda conhecida
+      const allianceGuildsSet = new Set(['Manifest', 'Allyance', 'Grand_Order'])
+      for (const [nick, player] of Array.from(allPlayerStats.entries())) {
+        if (!allianceGuildsSet.has((player as any).guilda)) {
+          allPlayerStats.delete(nick)
+        }
+      }
+      console.log('🧪 Fallback de filtro aplicado (cache vazio). Mantidos apenas jogadores com guilda Manifest/Allyance/Grand_Order.')
     }
+
+    // Logs de distribuição após o filtro
+    const totalAfterFilter = allPlayerStats.size
+    const byGuildAfter: Record<string, number> = {}
+    for (const [, p] of allPlayerStats) {
+      const g = (p as any).guilda || 'Unknown'
+      byGuildAfter[g] = (byGuildAfter[g] || 0) + 1
+    }
+    console.log(`✅ Após filtro: ${totalAfterFilter}/${totalBeforeFilter} jogadores`)
+    console.log('📊 Distribuição por guilda (após filtro):', byGuildAfter)
 
     // Calcula K/D ratios
     for (const [, playerStats] of allPlayerStats) {
