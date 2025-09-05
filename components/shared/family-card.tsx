@@ -39,6 +39,12 @@ export function FamilyCard({ familia, guilda, classes, nodes_count, log_ids }: F
   const totalKdOverall = totalDeaths > 0 ? totalKills / totalDeaths : (totalKills > 0 ? Infinity : 0)
 
   const handleClassClick = (classe: string) => {
+    // Toggle seleção: se clicar novamente na mesma, fecha
+    if (selectedClass === classe) {
+      setIsModalOpen(false)
+      setSelectedClass(null)
+      return
+    }
     setSelectedClass(classe)
     setIsModalOpen(true)
   }
@@ -103,19 +109,32 @@ export function FamilyCard({ familia, guilda, classes, nodes_count, log_ids }: F
               <ShieldIcon className="h-4 w-4" />
               Classes ({classes.length})
             </div>
+            {selectedClass && (
+              <div className="mb-2 text-xs text-neutral-300">
+                Classe selecionada: <span className="font-medium text-neutral-100">{selectedClass}</span>
+                <span className="ml-2 text-neutral-500">(clique novamente para fechar)</span>
+              </div>
+            )}
             <div className="grid grid-cols-1 gap-2">
               {classes.map((cls, index) => {
                 const classKd = cls.deaths > 0 ? cls.kills / cls.deaths : (cls.kills > 0 ? Infinity : 0)
+                const isActive = selectedClass === cls.classe
                 return (
                   <Button
                     key={index}
                     variant="outline"
-                    className="justify-between h-auto p-3 border-neutral-600 hover:border-neutral-500 hover:bg-neutral-700"
+                    aria-pressed={isActive}
+                    className={`justify-between h-auto p-3 border-neutral-600 hover:border-neutral-500 hover:bg-neutral-700 hover:ring-1 hover:ring-blue-500 transition-colors ${
+                      isActive ? 'bg-neutral-700/70 border-blue-500 ring-1 ring-blue-500' : ''
+                    }`}
                     onClick={() => handleClassClick(cls.classe)}
                   >
-                    <div className="flex items-center gap-2">
-                      <SwordIcon className="h-4 w-4 text-neutral-400" />
-                      <span className="text-neutral-200 font-medium">{cls.classe}</span>
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span className={`inline-block w-1.5 h-4 rounded-full ${classKd >= 1 ? 'bg-green-500' : 'bg-red-500'}`} />
+                      <span className="text-neutral-200 font-medium truncate">{cls.classe}</span>
+                      {isActive && (
+                        <Badge variant="secondary" className="ml-2 bg-blue-900/60 text-blue-200">Selecionada</Badge>
+                      )}
                     </div>
                     <div className="flex items-center gap-3 text-sm">
                       <span className="text-green-400">K: {cls.kills}</span>
