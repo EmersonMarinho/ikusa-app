@@ -281,7 +281,7 @@ export function HistoryPage() {
       console.log('🔍 ===== BUSCANDO GEARSCORE =====')
       
       // 2. Busca gearscore de todos os players da Lollipop
-      const response = await fetch('/api/players-gearscore?guild=lollipop&limit=0')
+      const response = await fetch('/api/players-gearscore?guild=lollipop&limit=0', { cache: 'no-store' as RequestCache })
       const data = await response.json()
 
       if (data.success) {
@@ -346,12 +346,6 @@ export function HistoryPage() {
       return
     }
     
-    // Se já tem dados para esta node, não busca novamente
-    if (lollipopGearscore.length > 0) {
-      console.log('✅ Já tem dados de GS para esta node, ignorando chamada')
-      return
-    }
-    
     // Encontra o record atual que está sendo visualizado
     const currentRecord = historyData.find(record => 
       record.id === viewingComplete || 
@@ -360,6 +354,8 @@ export function HistoryPage() {
     
     if (currentRecord) {
       console.log('🔍 Buscando GS para node atual:', currentRecord.node)
+      // Limpa dados anteriores para forçar recálculo da UI
+      setLollipopGearscore([])
       fetchLollipopGearscore(currentRecord)
     } else {
       console.warn('⚠️ Nenhum record atual encontrado para buscar GS')
