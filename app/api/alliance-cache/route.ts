@@ -25,6 +25,27 @@ interface AllianceMember {
   lastSeen: Date;
 }
 
+// Deduplica por família+guilda mantendo o registro mais recente e mestrias
+function dedupeMembers(members: AllianceMember[]): AllianceMember[] {
+  const map = new Map<string, AllianceMember>();
+  for (const m of members) {
+    const key = `${(m.familia || '').trim().toLowerCase()}|${(m.guilda || '').trim()}`;
+    const existing = map.get(key);
+    if (!existing) {
+      map.set(key, m);
+      continue;
+    }
+    const newer = (existing.lastSeen?.getTime?.() || 0) < (m.lastSeen?.getTime?.() || 0) ? m : existing;
+    map.set(key, {
+      ...newer,
+      isMestre: Boolean(existing.isMestre || m.isMestre),
+    });
+  }
+  const unique = Array.from(map.values());
+  unique.sort((a, b) => (b.lastSeen?.getTime?.() || 0) - (a.lastSeen?.getTime?.() || 0));
+  return unique;
+}
+
 // Função para obter cache do Supabase
 async function getCacheFromSupabase(): Promise<AllianceMember[]> {
   try {
@@ -44,9 +65,8 @@ async function getCacheFromSupabase(): Promise<AllianceMember[]> {
       lastSeen: new Date(item.lastseen ?? item.lastSeen ?? new Date().toISOString()),
     }));
 
-    // Ordena em memória por lastSeen desc para evitar depender do nome da coluna no banco
-    mapped.sort((a, b) => b.lastSeen.getTime() - a.lastSeen.getTime())
-    return mapped
+    // Deduplica e ordena por lastSeen desc
+    return dedupeMembers(mapped)
   } catch (error) {
     console.warn('Erro ao buscar cache do Supabase:', error);
     return [];
@@ -59,14 +79,16 @@ async function saveCacheToSupabase(members: AllianceMember[]): Promise<void> {
     // Limpa cache antigo
     await supabase.from('alliance_cache').delete().neq('id', '00000000-0000-0000-0000-000000000000');
     
+    const unique = dedupeMembers(members);
+
     // Monta payloads para ambos esquemas de coluna
-    const cacheDataSnake = members.map(member => ({
+    const cacheDataSnake = unique.map(member => ({
       familia: member.familia,
       guilda: member.guilda,
       ismestre: member.isMestre,
       lastseen: member.lastSeen.toISOString()
     }));
-    const cacheDataCamel = members.map(member => ({
+    const cacheDataCamel = unique.map(member => ({
       familia: member.familia,
       guilda: member.guilda,
       isMestre: member.isMestre,
@@ -89,7 +111,7 @@ async function saveCacheToSupabase(members: AllianceMember[]): Promise<void> {
     if (error) {
       console.error('Erro ao salvar cache no Supabase:', error);
     } else {
-      console.log('✅ Cache salvo no Supabase:', members.length, 'membros');
+      console.log('✅ Cache salvo no Supabase:', unique.length, 'membros');
     }
   } catch (error) {
     console.error('Erro ao salvar cache no Supabase:', error);
@@ -185,15 +207,18 @@ async function updateAllianceCache(): Promise<AllianceMember[]> {
     }
   }
 
+  // Deduplica antes de salvar
+  const uniqueCache = dedupeMembers(newCache);
+
   // Salva novo cache no Supabase
-  if (newCache.length > 0) {
-    await saveCacheToSupabase(newCache);
+  if (uniqueCache.length > 0) {
+    await saveCacheToSupabase(uniqueCache);
   }
 
-  console.log(`✅ Cache atualizado: ${newCache.length} membros da aliança`);
+  console.log(`✅ Cache atualizado: ${uniqueCache.length} membros da aliança`);
   console.log('📊 Distribuição por guilda:');
   
-  const guildCounts = newCache.reduce((acc, member) => {
+  const guildCounts = uniqueCache.reduce((acc, member) => {
     acc[member.guilda] = (acc[member.guilda] || 0) + 1;
     return acc;
   }, {} as Record<string, number>);
@@ -202,7 +227,7 @@ async function updateAllianceCache(): Promise<AllianceMember[]> {
     console.log(`  ${guild}: ${count} membros`);
   });
 
-  return newCache;
+  return uniqueCache;
 }
 
 // GET: Retorna o cache atual
@@ -235,11 +260,12 @@ export async function GET() {
       }
     }
 
+    const unique = dedupeMembers(members);
     return NextResponse.json({
       success: true,
-      members: members,
-      total: members.length,
-      lastUpdate: members.length > 0 ? members[0].lastSeen : null,
+      members: unique,
+      total: unique.length,
+      lastUpdate: unique.length > 0 ? unique[0].lastSeen : null,
       guilds: ['Manifest', 'Allyance', 'Grand_Order']
     });
   } catch (error) {
