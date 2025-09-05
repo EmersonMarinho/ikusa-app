@@ -626,13 +626,20 @@ export async function GET(request: NextRequest) {
     // Filtro: mantém apenas jogadores da aliança
     const allianceFamilies = new Set(Object.keys(familiaToGuild || {}).map(normalizeFamilia))
     if (allianceFamilies.size > 0) {
+      const allowedGuildsSet = new Set(['Manifest', 'Allyance', 'Grand_Order'])
+      let removedByFamilyFilter = 0
       for (const [nick, player] of Array.from(allPlayerStats.entries())) {
         const fam = normalizeFamilia(player.player_familia)
-        if (!fam || !allianceFamilies.has(fam)) {
+        const g = (player as any).guilda
+        // Mantém se a família estiver no cache OU se a guilda já foi inferida como aliança
+        const keepByFamily = fam && allianceFamilies.has(fam)
+        const keepByGuild = allowedGuildsSet.has(g)
+        if (!keepByFamily && !keepByGuild) {
           allPlayerStats.delete(nick)
+          removedByFamilyFilter++
         }
       }
-      console.log(`🧹 Filtro por família do alliance-cache aplicado. Famílias no cache: ${allianceFamilies.size}`)
+      console.log(`🧹 Filtro aplicado. Famílias no cache: ${allianceFamilies.size}. Removidos por não pertencerem à aliança: ${removedByFamilyFilter}`)
     } else {
       // Fallback quando o alliance-cache está vazio: filtra por guilda conhecida
       const allianceGuildsSet = new Set(['Manifest', 'Allyance', 'Grand_Order'])
