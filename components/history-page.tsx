@@ -1587,54 +1587,59 @@ export function HistoryPage() {
                         <div className="space-y-4">
                           <h3 className="text-lg font-semibold text-neutral-100">Composição por Classe</h3>
                           <div className="space-y-3">
-                            {(processedData.total_por_classe || processedData.totalPorClasse).map(({ classe, count }: any) => {
-                              const playersBase = selectedGuildView === "all" || !processedData.classes_by_guild
-                                ? (processedData.classes || {})[classe] || []
-                                : (processedData.classes_by_guild || {})[selectedGuildView]?.[classe] || []
+                            {(processedData.total_por_classe || processedData.totalPorClasse)
+                              .map(({ classe, count }: any) => {
+                                const playersBase = selectedGuildView === "all" || !processedData.classes_by_guild
+                                  ? (processedData.classes || {})[classe] || []
+                                  : (processedData.classes_by_guild || {})[selectedGuildView]?.[classe] || []
 
-                              // Enriquecer players com K/D do dia, se disponível
-                              const players = playersBase.map((p: any) => {
-                                const statsGuild = processedData.playerStatsByGuild || processedData.player_stats_by_guild || {}
-                                let kdInfo: { kills?: number; deaths?: number } = {}
-                                let killsVsChernobyl: number | undefined
-                                if (selectedGuildView === 'all') {
-                                  for (const [guildName, byNick] of Object.entries(statsGuild as any)) {
-                                    if ((byNick as any)[p.nick]) {
-                                      kdInfo = { kills: (byNick as any)[p.nick].kills, deaths: (byNick as any)[p.nick].deaths }
-                                      if (typeof (byNick as any)[p.nick].kills_vs_chernobyl === 'number') {
-                                        killsVsChernobyl = (byNick as any)[p.nick].kills_vs_chernobyl
+                                // Enriquecer players com K/D do dia, se disponível
+                                const players = playersBase.map((p: any) => {
+                                  const statsGuild = processedData.playerStatsByGuild || processedData.player_stats_by_guild || {}
+                                  let kdInfo: { kills?: number; deaths?: number } = {}
+                                  let killsVsChernobyl: number | undefined
+                                  if (selectedGuildView === 'all') {
+                                    for (const [guildName, byNick] of Object.entries(statsGuild as any)) {
+                                      if ((byNick as any)[p.nick]) {
+                                        kdInfo = { kills: (byNick as any)[p.nick].kills, deaths: (byNick as any)[p.nick].deaths }
+                                        if (typeof (byNick as any)[p.nick].kills_vs_chernobyl === 'number') {
+                                          killsVsChernobyl = (byNick as any)[p.nick].kills_vs_chernobyl
+                                        }
+                                        break
                                       }
-                                      break
+                                    }
+                                  } else {
+                                    const byNick = (statsGuild as any)[selectedGuildView] || {}
+                                    if (byNick[p.nick]) {
+                                      kdInfo = { kills: byNick[p.nick].kills, deaths: byNick[p.nick].deaths }
+                                      if (typeof byNick[p.nick].kills_vs_chernobyl === 'number') {
+                                        killsVsChernobyl = byNick[p.nick].kills_vs_chernobyl
+                                      }
                                     }
                                   }
-                                } else {
-                                  const byNick = (statsGuild as any)[selectedGuildView] || {}
-                                  if (byNick[p.nick]) {
-                                    kdInfo = { kills: byNick[p.nick].kills, deaths: byNick[p.nick].deaths }
-                                    if (typeof byNick[p.nick].kills_vs_chernobyl === 'number') {
-                                      killsVsChernobyl = byNick[p.nick].kills_vs_chernobyl
-                                    }
-                                  }
-                                }
-                                return { nick: p.nick, familia: p.familia, killsVsChernobyl, ...kdInfo }
+                                  return { nick: p.nick, familia: p.familia, killsVsChernobyl, ...kdInfo }
+                                })
+
+                                // Oculta classes com 0 players na guilda selecionada
+                                if (players.length === 0) return null
+
+                                // Denominador para %: total de jogadores da guilda selecionada
+                                const guildTotal = (selectedGuildView === 'all' || !processedData.classes_by_guild)
+                                  ? Number(processedData.total_geral || processedData.totalGeral)
+                                  : Object.values(((processedData.classes_by_guild || {})[selectedGuildView] || {}))
+                                      .reduce((acc: number, arr: any) => acc + (Array.isArray(arr) ? arr.length : 0), 0)
+
+                                return (
+                                  <CollapsibleClassItem
+                                    key={classe}
+                                    classe={classe}
+                                    count={players.length}
+                                    players={players}
+                                    total={guildTotal}
+                                  />
+                                )
                               })
-
-                              // Denominador para %: total de jogadores da guilda selecionada
-                              const guildTotal = (selectedGuildView === 'all' || !processedData.classes_by_guild)
-                                ? Number(processedData.total_geral || processedData.totalGeral)
-                                : Object.values(((processedData.classes_by_guild || {})[selectedGuildView] || {}))
-                                    .reduce((acc: number, arr: any) => acc + (Array.isArray(arr) ? arr.length : 0), 0)
-
-                              return (
-                                <CollapsibleClassItem
-                                  key={classe}
-                                  classe={classe}
-                                  count={players.length}
-                                  players={players}
-                                  total={guildTotal}
-                                />
-                              )
-                            })}
+                              .filter(Boolean)}
                           </div>
                         </div>
                       </TabsContent>
