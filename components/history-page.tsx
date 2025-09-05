@@ -61,7 +61,19 @@ export function HistoryPage() {
   const [selectedGuildView, setSelectedGuildView] = useState<string>("all")
   const [modalSearch, setModalSearch] = useState<string>("")
   const [modalClassFilter, setModalClassFilter] = useState<string>("all")
-  const [sortBy, setSortBy] = useState<string>("kills")
+  const [sortCol, setSortCol] = useState<string | null>(null)
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc')
+  const handleSortClick = (col: string, defaultDir: 'asc' | 'desc' = 'desc') => {
+    if (sortCol === col) {
+      setSortDir(sortDir === 'asc' ? 'desc' : 'asc')
+    } else {
+      setSortCol(col)
+      setSortDir(defaultDir)
+    }
+  }
+  const renderSortIcon = (col: string) => sortCol === col ? (
+    sortDir === 'asc' ? <ChevronUpIcon className="inline h-3 w-3 ml-1" /> : <ChevronDownIcon className="inline h-3 w-3 ml-1" />
+  ) : null
   const [showKillStats, setShowKillStats] = useState<Record<string, boolean>>({})
   const [historyData, setHistoryData] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
@@ -1506,10 +1518,10 @@ export function HistoryPage() {
                       </TabsContent>
 
                       <TabsContent value="jogadores" className="mt-4 space-y-4">
-                        <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                           <div>
-                            <Label>Buscar jogador</Label>
-                            <Input placeholder="nick..." value={modalSearch} onChange={(e)=>setModalSearch(e.target.value)} className="bg-neutral-800 border-neutral-700" />
+                            <Label>Buscar família</Label>
+                            <Input placeholder="família..." value={modalSearch} onChange={(e)=>setModalSearch(e.target.value)} className="bg-neutral-800 border-neutral-700" />
                           </div>
                           <div>
                             <Label>Guilda</Label>
@@ -1535,21 +1547,6 @@ export function HistoryPage() {
                                   .flatMap((byNick: any)=> Object.values(byNick as any).map((p:any)=> p.classe || 'Desconhecida')))).sort().map((c:any)=> (
                                   <SelectItem key={c} value={c}>{c}</SelectItem>
                                 ))}
-                              </SelectContent>
-                            </Select>
-                          </div>
-                          <div>
-                            <Label>Ordenar por</Label>
-                            <Select value={sortBy} onValueChange={setSortBy}>
-                              <SelectTrigger className="bg-neutral-800 border-neutral-700">
-                                <SelectValue />
-                              </SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value="kills">Kills (maior)</SelectItem>
-                                <SelectItem value="kd">K/D (maior)</SelectItem>
-                                <SelectItem value="kd_chernobyl">K/D vs Chernobyl (maior)</SelectItem>
-                                <SelectItem value="deaths">Deaths (menor)</SelectItem>
-                                <SelectItem value="nick">Nome (A-Z)</SelectItem>
                               </SelectContent>
                             </Select>
                           </div>
@@ -1597,27 +1594,32 @@ export function HistoryPage() {
                             }
                           }
                           const filtered = rows.filter(r =>
-                            (modalSearch ? r.nick.toLowerCase().includes(modalSearch.toLowerCase()) : true) &&
+                            (modalSearch ? (r.familia || '').toLowerCase().includes(modalSearch.toLowerCase()) : true) &&
                             (modalClassFilter==='all' ? true : r.classe === modalClassFilter)
                           ).sort((a,b)=> {
-                            if (sortBy === 'kills') return b.kills - a.kills
-                            if (sortBy === 'kd') {
-                              // Ordena Infinity no topo, depois por K/D decrescente
-                              if (!isFinite(b.kd) && isFinite(a.kd)) return 1
-                              if (!isFinite(a.kd) && isFinite(b.kd)) return -1
-                              if (b.kd === a.kd) return b.kills - a.kills
-                              return b.kd - a.kd
+                            const dir = sortDir === 'asc' ? 1 : -1
+                            const cmpNum = (x: number, y: number) => (x - y) * dir
+                            const cmpNumWithInf = (x: number, y: number) => {
+                              const ax = isFinite(x), ay = isFinite(y)
+                              if (ax && !ay) return sortDir === 'asc' ? -1 : 1
+                              if (!ax && ay) return sortDir === 'asc' ? 1 : -1
+                              if (x === y) return cmpNum(a.kills, b.kills) // desempate
+                              return (x - y) * dir
                             }
-                            if (sortBy === 'kd_chernobyl') {
-                              // Ordena Infinity no topo, depois por K/D vs Chernobyl decrescente
-                              if (!isFinite(b.kdC) && isFinite(a.kdC)) return 1
-                              if (!isFinite(a.kdC) && isFinite(b.kdC)) return -1
-                              if (b.kdC === a.kdC) return b.killsC - a.killsC
-                              return b.kdC - a.kdC
+                            const cmpStr = (x: string, y: string) => x.localeCompare(y) * (sortDir === 'asc' ? 1 : -1)
+                            switch (sortCol) {
+                              case 'nick': return cmpStr(a.nick, b.nick)
+                              case 'familia': return cmpStr(a.familia || '', b.familia || '')
+                              case 'guilda': return cmpStr(a.guilda, b.guilda)
+                              case 'classe': return cmpStr(a.classe, b.classe)
+                              case 'kills': return cmpNum(a.kills, b.kills)
+                              case 'deaths': return cmpNum(a.deaths, b.deaths)
+                              case 'kd': return cmpNumWithInf(a.kd, b.kd)
+                              case 'killsC': return cmpNum(a.killsC, b.killsC)
+                              case 'deathsC': return cmpNum(a.deathsC, b.deathsC)
+                              case 'kdC': return cmpNumWithInf(a.kdC, b.kdC)
+                              default: return 0
                             }
-                            if (sortBy === 'deaths') return a.deaths - b.deaths
-                            if (sortBy === 'nick') return a.nick.localeCompare(b.nick)
-                            return 0
                           })
 
                           return (
@@ -1625,18 +1627,18 @@ export function HistoryPage() {
                               <table className="w-full text-sm">
                                 <thead>
                                   <tr className="border-b border-neutral-700">
-                                    <th className="text-left p-2 text-neutral-300">Jogador</th>
-                                    <th className="text-left p-2 text-neutral-300">Família</th>
-                                    <th className="text-left p-2 text-neutral-300">Guilda</th>
-                                    <th className="text-left p-2 text-neutral-300">Classe</th>
-                                    <th className="text-center p-2 text-neutral-300">Kills</th>
-                                    <th className="text-center p-2 text-neutral-300">Deaths</th>
-                                    <th className="text-center p-2 text-neutral-300">K/D</th>
+                                    <th className="text-left p-2 text-neutral-300 cursor-pointer select-none" onClick={()=>handleSortClick('nick','asc')}>Jogador {renderSortIcon('nick')}</th>
+                                    <th className="text-left p-2 text-neutral-300 cursor-pointer select-none" onClick={()=>handleSortClick('familia','asc')}>Família {renderSortIcon('familia')}</th>
+                                    <th className="text-left p-2 text-neutral-300 cursor-pointer select-none" onClick={()=>handleSortClick('guilda','asc')}>Guilda {renderSortIcon('guilda')}</th>
+                                    <th className="text-left p-2 text-neutral-300 cursor-pointer select-none" onClick={()=>handleSortClick('classe','asc')}>Classe {renderSortIcon('classe')}</th>
+                                    <th className="text-center p-2 text-neutral-300 cursor-pointer select-none" onClick={()=>handleSortClick('kills','desc')}>Kills {renderSortIcon('kills')}</th>
+                                    <th className="text-center p-2 text-neutral-300 cursor-pointer select-none" onClick={()=>handleSortClick('deaths','asc')}>Deaths {renderSortIcon('deaths')}</th>
+                                    <th className="text-center p-2 text-neutral-300 cursor-pointer select-none" onClick={()=>handleSortClick('kd','desc')}>K/D {renderSortIcon('kd')}</th>
                                     {selectedGuildView === 'Lollipop' && (
                                       <>
-                                        <th className="text-center p-2 text-neutral-300">Kills vs Chernobyl</th>
-                                        <th className="text-center p-2 text-neutral-300">Deaths vs Chernobyl</th>
-                                        <th className="text-center p-2 text-neutral-300">K/D vs Chernobyl</th>
+                                        <th className="text-center p-2 text-neutral-300 cursor-pointer select-none" onClick={()=>handleSortClick('killsC','desc')}>Kills vs Chernobyl {renderSortIcon('killsC')}</th>
+                                        <th className="text-center p-2 text-neutral-300 cursor-pointer select-none" onClick={()=>handleSortClick('deathsC','asc')}>Deaths vs Chernobyl {renderSortIcon('deathsC')}</th>
+                                        <th className="text-center p-2 text-neutral-300 cursor-pointer select-none" onClick={()=>handleSortClick('kdC','desc')}>K/D vs Chernobyl {renderSortIcon('kdC')}</th>
                                       </>
                                     )}
                                   </tr>
@@ -1698,6 +1700,8 @@ export function HistoryPage() {
                         {(() => {
                           // Calcula K/D geral contra cada guilda
                           const statsGuild = processedData.playerStatsByGuild || processedData.player_stats_by_guild || {}
+                          const killsByGuild = processedData.killsByGuild || processedData.kills_by_guild || {}
+                          const deathsByGuild = processedData.deathsByGuild || processedData.deaths_by_guild || {}
                           const guildStats: Record<string, { kills: number; deaths: number; kd: number; players: number }> = {}
                           
                           // Inicializa estatísticas para cada guilda
@@ -1705,17 +1709,28 @@ export function HistoryPage() {
                             guildStats[guild] = { kills: 0, deaths: 0, kd: 0, players: 0 }
                           })
                           
-                          // Soma kills e deaths por guilda
-                          Object.entries(statsGuild).forEach(([guildName, byNick]: [string, any]) => {
-                            Object.values(byNick).forEach((player: any) => {
-                              const kills = player.kills || 0
-                              const deaths = player.deaths || 0
-                              
-                              guildStats[guildName].kills += kills
-                              guildStats[guildName].deaths += deaths
-                              guildStats[guildName].players += 1
+                          // Se houver totais por guilda, use como fonte primária pela consistência
+                          if (Object.keys(killsByGuild).length > 0 || Object.keys(deathsByGuild).length > 0) {
+                            Object.keys(guildStats).forEach((guildName) => {
+                              guildStats[guildName].kills = killsByGuild[guildName] || 0
+                              guildStats[guildName].deaths = deathsByGuild[guildName] || 0
                             })
-                          })
+                            // Número de players segue vindo do map por jogador
+                            Object.entries(statsGuild).forEach(([guildName, byNick]: [string, any]) => {
+                              guildStats[guildName].players = Object.keys(byNick || {}).length
+                            })
+                          } else {
+                            // Fallback: soma a partir das estatísticas individuais
+                            Object.entries(statsGuild).forEach(([guildName, byNick]: [string, any]) => {
+                              Object.values(byNick).forEach((player: any) => {
+                                const kills = player.kills || 0
+                                const deaths = player.deaths || 0
+                                guildStats[guildName].kills += kills
+                                guildStats[guildName].deaths += deaths
+                                guildStats[guildName].players += 1
+                              })
+                            })
+                          }
                           
                           // Calcula K/D para cada guilda
                           Object.values(guildStats).forEach(stats => {

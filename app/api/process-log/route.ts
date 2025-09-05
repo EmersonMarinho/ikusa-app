@@ -100,13 +100,23 @@ function extractNicksFromLog(guildName: string, logText: string): Set<string> {
     return nicks;
   }
 
-  // Para outras guildas, captura apenas nicks que são explicitamente marcados com "from [GuildName]"
+  // Para outras guildas, captura nicks explicitamente associados à guilda
   for (const line of lines) {
     if (line.includes(`from ${guildName}`)) {
-      // Captura vítimas da guilda (quem foi morto)
+      // Caso 1: "Killer has killed Victim from GuildName" -> Victim pertence à guilda
       const victimMatch = line.match(/has killed (.+?) from/i);
       if (victimMatch) {
         nicks.add(victimMatch[1]);
+      }
+
+      // Caso 2: "Victim died to Killer from GuildName" -> Killer pertence à guilda
+      const killerFromMatch = line.match(/died to (.+?) from (.+?)\s*$/i);
+      if (killerFromMatch) {
+        const killerNick = killerFromMatch[1]?.trim() || '';
+        const killerGuild = killerFromMatch[2]?.trim() || '';
+        if (killerGuild === guildName) {
+          nicks.add(killerNick);
+        }
       }
     }
   }
