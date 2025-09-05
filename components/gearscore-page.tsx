@@ -75,6 +75,10 @@ export function GearscorePageComponent() {
   const [sortOrder, setSortOrder] = useState("desc")
   const [limit] = useState(0) // Sem limite - mostra todos os players
   const [selectedPlayer, setSelectedPlayer] = useState<PlayerGearscore | null>(null)
+  // Membros da aliança para mapear família -> guilda
+  const [familyToGuild, setFamilyToGuild] = useState<Record<string, string>>({})
+  const [guildAverages, setGuildAverages] = useState<Record<string, { totalPlayers: number; averageGS: number }>>({})
+  const [guildFilter, setGuildFilter] = useState<'all' | 'Manifest' | 'Allyance' | 'Grand_Order'>('all')
   
   // Estados para upload de gearscore
   const [uploadFile, setUploadFile] = useState<File | null>(null)
@@ -181,12 +185,73 @@ export function GearscorePageComponent() {
     fetchPlayers()
   }, [sortBy, sortOrder, limit])
 
-  // Filtra players baseado no termo de busca
-  const filteredPlayers = players.filter(player =>
-    player.family_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    player.character_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    player.main_class.toLowerCase().includes(searchTerm.toLowerCase())
-  )
+  // Carrega cache de aliança para mapear famílias
+  useEffect(() => {
+    const loadAlliance = async () => {
+      try {
+        const res = await fetch('/api/alliance-cache')
+        const data = await res.json()
+        if (data?.success && Array.isArray(data.members)) {
+          const map: Record<string, string> = {}
+          for (const m of data.members) {
+            if (m?.familia) {
+              map[String(m.familia).toLowerCase()] = m.guilda
+            }
+          }
+          setFamilyToGuild(map)
+        }
+      } catch (e) {
+        // silencioso: se falhar, apenas não mostra por guilda
+      }
+    }
+    loadAlliance()
+  }, [])
+
+  // Recalcula médias por guilda quando players ou mapa mudam
+  useEffect(() => {
+    if (players.length === 0) {
+      setGuildAverages({})
+      return
+    }
+    const allowedGuilds = ['Manifest', 'Allyance', 'Grand_Order']
+    const sum: Record<string, { gs: number; count: number }> = {}
+    for (const g of allowedGuilds) sum[g] = { gs: 0, count: 0 }
+    // Lista de players de defesa a serem excluídos da média (por família)
+    const defensePlayers = [
+      'teste','lagswitch','garciagil','oat','haleluya','fberg','dxvn','zedobambu','kingthepower','faellz','overblow','schwarzfang','vallimi','witte','miih'
+    ]
+    for (const p of players) {
+      const g = familyToGuild[p.family_name?.toLowerCase?.() || '']
+      if (!allowedGuilds.includes(g)) continue
+      const isDefense = String(p.main_class || '').toLowerCase() === 'defesa'
+      const isDefenseByName = defensePlayers.includes(String(p.family_name || '').toLowerCase())
+      // Médias por Guilda: mantém Shai, remove somente Defesa (classe) e nicks listados
+      if (isDefense || isDefenseByName) continue
+      sum[g].gs += Number(p.gearscore || 0)
+      sum[g].count += 1
+    }
+    const result: Record<string, { totalPlayers: number; averageGS: number }> = {}
+    for (const g of allowedGuilds) {
+      const c = sum[g].count
+      result[g] = {
+        totalPlayers: c,
+        averageGS: c > 0 ? Math.round(sum[g].gs / c) : 0,
+      }
+    }
+    setGuildAverages(result)
+  }, [players, familyToGuild])
+
+  // Filtra players por busca e guilda
+  const filteredPlayers = players.filter(player => {
+    const matchesSearch =
+      player.family_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      player.character_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      player.main_class.toLowerCase().includes(searchTerm.toLowerCase())
+    if (!matchesSearch) return false
+    if (guildFilter === 'all') return true
+    const g = familyToGuild[player.family_name?.toLowerCase?.() || '']
+    return g === guildFilter
+  })
 
   // Funções auxiliares
   const formatDate = (dateString: string) => {
@@ -229,6 +294,13 @@ export function GearscorePageComponent() {
       'Drakania': 'bg-rose-100 text-rose-800'
     }
     return colors[className] || 'bg-gray-100 text-gray-800'
+  }
+
+  const getGuildBadgeClass = (guild?: string) => {
+    if (guild === 'Manifest') return 'border-blue-700 text-blue-300'
+    if (guild === 'Allyance') return 'border-green-700 text-green-300'
+    if (guild === 'Grand_Order') return 'border-purple-700 text-purple-300'
+    return 'border-yellow-700 text-yellow-300'
   }
 
   if (loading && players.length === 0) {
@@ -399,6 +471,39 @@ export function GearscorePageComponent() {
                 </div>
               )}
 
+              {/* Médias por Guilda */}
+              {Object.keys(guildAverages).length > 0 && (
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                      <Users className="h-5 w-5" />
+                      Médias por Guilda
+                    </CardTitle>
+                    <CardDescription>Contagem e GS médio por guilda da aliança</CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+                      {(['Manifest','Allyance','Grand_Order'] as const).map(g => (
+                        <div key={g} className="p-3 border rounded-lg">
+                          <div className="flex items-center justify-between">
+                            <div className="font-medium">{g}</div>
+                            <Badge variant="outline" className={
+                              g==='Manifest' ? 'border-blue-700 text-blue-300' :
+                              g==='Allyance' ? 'border-green-700 text-green-300' :
+                              'border-purple-700 text-purple-300'
+                            }>
+                              {guildAverages[g]?.totalPlayers || 0} players
+                            </Badge>
+                          </div>
+                          <div className="mt-2 text-sm text-muted-foreground">GS médio</div>
+                          <div className="text-2xl font-bold">{guildAverages[g]?.averageGS || 0}</div>
+                        </div>
+                      ))}
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+
               {/* Distribuição de Gearscore */}
               {stats && (
                 <Card>
@@ -480,6 +585,18 @@ export function GearscorePageComponent() {
                       </div>
                     </div>
 
+                    <Select value={guildFilter} onValueChange={(v: any) => setGuildFilter(v)}>
+                      <SelectTrigger className="w-48">
+                        <SelectValue placeholder="Filtrar por guilda" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">Todas as Guildas</SelectItem>
+                        <SelectItem value="Manifest">Manifest</SelectItem>
+                        <SelectItem value="Allyance">Allyance</SelectItem>
+                        <SelectItem value="Grand_Order">Grand_Order</SelectItem>
+                      </SelectContent>
+                    </Select>
+
                     <Select value={sortBy} onValueChange={setSortBy}>
                       <SelectTrigger className="w-48">
                         <SelectValue placeholder="Ordenar por" />
@@ -527,6 +644,7 @@ export function GearscorePageComponent() {
                         <TableRow>
                           <TableHead className="w-12">#</TableHead>
                           <TableHead>Player</TableHead>
+                          <TableHead>Guilda</TableHead>
                           <TableHead>Classe</TableHead>
                           <TableHead className="text-center">AP</TableHead>
                           <TableHead className="text-center">AAP</TableHead>
@@ -549,6 +667,16 @@ export function GearscorePageComponent() {
                                   {player.character_name}
                                 </div>
                               </div>
+                            </TableCell>
+                            <TableCell>
+                              {(() => {
+                                const g = familyToGuild[player.family_name?.toLowerCase?.() || '']
+                                return (
+                                  <Badge variant="outline" className={getGuildBadgeClass(g)}>
+                                    {g || 'Desconhecida'}
+                                  </Badge>
+                                )
+                              })()}
                             </TableCell>
                             <TableCell>
                               <Badge className={getClassColor(player.main_class)}>
