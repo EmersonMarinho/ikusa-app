@@ -134,14 +134,11 @@ export async function GET(request: NextRequest) {
     }
 
     // Processa os dados para o formato esperado
-    const playersUnfiltered: PlayerGearscore[] = playersData?.map(player => {
+    const playersUnfiltered: (PlayerGearscore & { prev_gearscore?: number | null; prev_recorded_at?: string | null })[] = playersData?.map(player => {
       // Pega o gearscore mais recente do histórico
-      const gearscoreHistory = player.gearscore_history || []
-      const latestGearscore = gearscoreHistory.length > 0 
-        ? gearscoreHistory.reduce((latest: any, current: any) => 
-            new Date(current.recorded_at) > new Date(latest.recorded_at) ? current : latest
-          )
-        : null
+      const gearscoreHistory = (player.gearscore_history || []).sort((a: any, b: any) => new Date(b.recorded_at).getTime() - new Date(a.recorded_at).getTime())
+      const latestGearscore = gearscoreHistory[0] || null
+      const previousGearscore = gearscoreHistory[1] || null
 
       if (!latestGearscore) {
         // Se não há histórico, retorna valores padrão
@@ -171,6 +168,8 @@ export async function GET(request: NextRequest) {
         aap: latestGearscore.aap,
         dp: latestGearscore.dp,
         gearscore: latestGearscore.gearscore,
+        prev_gearscore: previousGearscore ? previousGearscore.gearscore : null,
+        prev_recorded_at: previousGearscore ? previousGearscore.recorded_at : null,
         link_gear: player.link_gear,
         created_at: player.created_at,
         last_updated: latestGearscore.recorded_at
@@ -277,7 +276,7 @@ export async function GET(request: NextRequest) {
         .select('*')
         .eq('user_id', userId)
         .order('recorded_at', { ascending: false })
-        .limit(30)
+        .limit(3)
 
       if (!historyError && historyData) {
         history = historyData.map(h => ({

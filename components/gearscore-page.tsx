@@ -40,6 +40,9 @@ interface PlayerGearscore {
   link_gear?: string
   created_at: string
   last_updated: string
+  // valores do registro anterior (para evolução)
+  prev_gearscore?: number | null
+  prev_recorded_at?: string | null
 }
 
 interface GuildStats {
@@ -78,9 +81,11 @@ export function GearscorePageComponent() {
   // Membros da aliança para mapear família -> guilda
   const [familyToGuild, setFamilyToGuild] = useState<Record<string, string>>({})
   const [guildAverages, setGuildAverages] = useState<Record<string, { totalPlayers: number; averageGS: number }>>({})
+  const [prevGuildAverages, setPrevGuildAverages] = useState<Record<string, { totalPlayers: number; averageGS: number }>>({})
   const [guildFilter, setGuildFilter] = useState<'all' | 'Manifest' | 'Allyance' | 'Grand_Order'>('all')
   const [classFilter, setClassFilter] = useState<'all' | string>('all')
   const availableClasses = Array.from(new Set(players.map(p => p.main_class))).sort()
+  const [showAllEvolutions, setShowAllEvolutions] = useState<boolean>(false)
   
   // Estados para upload de gearscore
   const [uploadFile, setUploadFile] = useState<File | null>(null)
@@ -216,8 +221,8 @@ export function GearscorePageComponent() {
       return
     }
     const allowedGuilds = ['Manifest', 'Allyance', 'Grand_Order']
-    const sum: Record<string, { gs: number; count: number }> = {}
-    for (const g of allowedGuilds) sum[g] = { gs: 0, count: 0 }
+    const sum: Record<string, { gs: number; count: number; gsPrev: number; countPrev: number }> = {}
+    for (const g of allowedGuilds) sum[g] = { gs: 0, count: 0, gsPrev: 0, countPrev: 0 }
     // Lista de players de defesa a serem excluídos da média (por família)
     const defensePlayers = [
       'teste','lagswitch','garciagil','oat','haleluya','fberg','dxvn','zedobambu','kingthepower','faellz','overblow','schwarzfang','vallimi','witte','miih'
@@ -229,18 +234,31 @@ export function GearscorePageComponent() {
       const isDefenseByName = defensePlayers.includes(String(p.family_name || '').toLowerCase())
       // Médias por Guilda: mantém Shai, remove somente Defesa (classe) e nicks listados
       if (isDefense || isDefenseByName) continue
-      sum[g].gs += Number(p.gearscore || 0)
+      const gsCurr = Math.max(Number(p.ap || 0), Number(p.aap || 0)) + Number(p.dp || 0)
+      sum[g].gs += gsCurr
       sum[g].count += 1
+      const prev = (p as any).prev_gearscore
+      if (prev != null) {
+        sum[g].gsPrev += Number(prev)
+        sum[g].countPrev += 1
+      }
     }
     const result: Record<string, { totalPlayers: number; averageGS: number }> = {}
+    const resultPrev: Record<string, { totalPlayers: number; averageGS: number }> = {}
     for (const g of allowedGuilds) {
       const c = sum[g].count
       result[g] = {
         totalPlayers: c,
         averageGS: c > 0 ? Math.round(sum[g].gs / c) : 0,
       }
+      const cp = sum[g].countPrev
+      resultPrev[g] = {
+        totalPlayers: cp,
+        averageGS: cp > 0 ? Math.round(sum[g].gsPrev / cp) : 0,
+      }
     }
     setGuildAverages(result)
+    setPrevGuildAverages(resultPrev)
   }, [players, familyToGuild])
 
   // Filtra players por busca e guilda
@@ -268,6 +286,8 @@ export function GearscorePageComponent() {
     if (gs >= 750) return "text-yellow-600"
     return "text-green-600"
   }
+
+  const computePlayerGS = (p: PlayerGearscore) => Math.max(Number(p.ap || 0), Number(p.aap || 0)) + Number(p.dp || 0)
 
   const getClassColor = (className: string) => {
     const colors: Record<string, string> = {
@@ -499,7 +519,18 @@ export function GearscorePageComponent() {
                             </Badge>
                           </div>
                           <div className="mt-2 text-sm text-muted-foreground">GS médio</div>
-                          <div className="text-2xl font-bold">{guildAverages[g]?.averageGS || 0}</div>
+                          <div className="text-2xl font-bold flex items-baseline gap-2">
+                            <span>{guildAverages[g]?.averageGS || 0}</span>
+                            {(() => {
+                              const prev = prevGuildAverages[g]?.averageGS || 0
+                              const curr = guildAverages[g]?.averageGS || 0
+                              if (!prev) return null
+                              const diff = curr - prev
+                              const cls = diff > 0 ? 'text-green-500' : diff < 0 ? 'text-red-500' : 'text-neutral-400'
+                              const sign = diff > 0 ? '+' : ''
+                              return <span className={`text-sm ${cls}`}>{sign}{diff} vs ant.</span>
+                            })()}
+                          </div>
                         </div>
                       ))}
                     </div>
@@ -563,6 +594,86 @@ export function GearscorePageComponent() {
                       </div>
                     ))}
                   </div>
+                </CardContent>
+              </Card>
+
+              {/* Players que mais evoluíram GS (minimalista, guilda inteira) */}
+              <Card>
+                <CardHeader>
+                  <div className="flex items-center justify-between">
+                    <CardTitle className="flex items-center gap-2">
+                      <TrendingUp className="h-5 w-5" />
+                      Maiores evoluções de GS (guilda)
+                    </CardTitle>
+                    <div className="text-xs text-muted-foreground">
+                      {(() => {
+                        const countPrev = players.filter(p => (p as any).prev_gearscore != null).length
+                        return `${countPrev} jogadores com histórico`
+                      })()}
+                    </div>
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  {(() => {
+                    const rows = players
+                      .map((p) => {
+                        const current = computePlayerGS(p)
+                        const prev = (p as any).prev_gearscore as number | null | undefined
+                        const diff = prev != null ? current - Number(prev) : null
+                        return { p, current, prev, diff }
+                      })
+                      .filter(r => r.diff !== null)
+                      .sort((a, b) => Number(b.diff) - Number(a.diff))
+                    const limited = showAllEvolutions ? rows : rows.slice(0, 5)
+
+                    if (rows.length === 0) {
+                      return <div className="text-sm text-muted-foreground">Sem dados suficientes para evolução.</div>
+                    }
+
+                    return (
+                      <div className="space-y-3">
+                        <div className="flex justify-end">
+                          {rows.length > 5 && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => setShowAllEvolutions(v => !v)}
+                            >
+                              {showAllEvolutions ? 'Ver menos' : 'Ver mais'}
+                            </Button>
+                          )}
+                        </div>
+                        <div className="divide-y rounded-md border">
+                          {limited.map(({ p, current, prev, diff }, i) => (
+                            <div key={p.id} className="flex items-center justify-between px-3 py-2 text-sm">
+                              <div className="flex items-center gap-2 min-w-0">
+                                <span className="text-muted-foreground w-6 text-right">{i + 1}.</span>
+                                <span className="font-medium truncate flex items-center gap-2">
+                                  {p.family_name}
+                                  {(() => {
+                                    const g = familyToGuild[p.family_name?.toLowerCase?.() || '']
+                                    return (
+                                      <Badge variant="outline" className={getGuildBadgeClass(g)}>
+                                        {g || '—'}
+                                      </Badge>
+                                    )
+                                  })()}
+                                </span>
+                              </div>
+                              <div className="flex items-center gap-3">
+                                <span className="text-muted-foreground hidden sm:inline">{prev}</span>
+                                <span className="text-muted-foreground">→</span>
+                                <span className="font-mono">{current}</span>
+                                <span className={Number(diff) > 0 ? 'text-green-600 font-semibold' : Number(diff) < 0 ? 'text-red-600 font-semibold' : 'text-neutral-500'}>
+                                  {Number(diff) > 0 ? `+${diff}` : diff}
+                                </span>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )
+                  })()}
                 </CardContent>
               </Card>
 
@@ -781,7 +892,7 @@ export function GearscorePageComponent() {
                 <div>
                   <h4 className="font-medium mb-2">Evolução do Gearscore</h4>
                   <div className="space-y-2">
-                    {history.map((entry) => (
+                    {history.slice(0, 3).map((entry) => (
                       <div key={entry.id} className="flex items-center justify-between p-2 bg-muted rounded">
                         <div className="flex items-center gap-4">
                           <span className="text-sm text-muted-foreground">
