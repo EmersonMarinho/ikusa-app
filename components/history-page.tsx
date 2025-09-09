@@ -125,6 +125,20 @@ export function HistoryPage() {
   const [lollipopGearscore, setLollipopGearscore] = useState<any[]>([])
   const [gsLoading, setGsLoading] = useState(false)
   const [gsError, setGsError] = useState<string | null>(null)
+  // Estados para GS Chernobyl (Oxion + Guilty)
+  const [chernGearscore, setChernGearscore] = useState<any[]>([])
+  const [chernLoading, setChernLoading] = useState(false)
+  const [chernError, setChernError] = useState<string | null>(null)
+  const [chernGuildAvg, setChernGuildAvg] = useState<number>(0)
+  const presentEstimatedAvg = useMemo(() => {
+    const visibleVals = chernGearscore.filter(p => p?.papd_maximo != null).map(p => Number(p.papd_maximo))
+    const privateCount = chernGearscore.filter(p => p?.papd_maximo == null || p?.perfil_privado).length
+    const totalCount = visibleVals.length + privateCount
+    if (totalCount === 0) return 0
+    const assumedPrivate = 830 // cenário solicitado
+    const sum = visibleVals.reduce((a, b) => a + b, 0) + (privateCount * assumedPrivate)
+    return Math.round(sum / totalCount)
+  }, [chernGearscore])
 
   // Load real data from Supabase
   useEffect(() => {
@@ -359,6 +373,121 @@ export function HistoryPage() {
       fetchLollipopGearscore(currentRecord)
     } else {
       console.warn('⚠️ Nenhum record atual encontrado para buscar GS')
+    }
+  }
+
+  // Busca GS Chernobyl (Oxion + Guilty) somente para os players PRESENTES na node atual
+  const fetchChernobylGearscore = async () => {
+    try {
+      setChernLoading(true)
+      setChernError(null)
+      setChernGearscore([])
+
+      // Encontra o record atual que está sendo visualizado
+      const currentRecord = historyData.find(record => 
+        record.id === viewingComplete || 
+        record.arquivo_nome === viewingComplete
+      )
+      if (!currentRecord) {
+        setChernError('Nenhuma node selecionada no histórico')
+        setChernLoading(false)
+        return
+      }
+
+      // Extrai participantes das guildas Oxion e Guilty a partir da node (normalizando nomes)
+      const normalize = (s: string) => String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, '').trim()
+      const targetGuilds = new Set(['oxion','guilty','chernobyl'])
+      const participants = new Set<string>()
+      try {
+        const pg = currentRecord.playerStatsByGuild || {}
+        // Percorre todas as guildas presentes e seleciona as que batem com Oxion/Guilty de forma robusta
+        Object.keys(pg).forEach((guildKey: string) => {
+          const gNorm = normalize(guildKey)
+          if (targetGuilds.has(gNorm) || gNorm.includes('oxion') || gNorm.includes('guilty') || gNorm.includes('chernobyl')) {
+            const m = pg[guildKey] || {}
+            Object.entries(m).forEach(([nick, stats]: [string, any]) => {
+              const nNorm = normalize(nick)
+              if (nNorm) participants.add(nNorm)
+              const fNorm = normalize((stats && stats.familia) ? stats.familia : '')
+              if (fNorm) participants.add(fNorm)
+            })
+          }
+        })
+        // Fallback: classes_by_guild
+        if (participants.size === 0 && currentRecord.classes_by_guild) {
+          const cbg = currentRecord.classes_by_guild
+          Object.keys(cbg).forEach((guildKey: string) => {
+            const gNorm = normalize(guildKey)
+            if (targetGuilds.has(gNorm) || gNorm.includes('oxion') || gNorm.includes('guilty') || gNorm.includes('chernobyl')) {
+              const guildClasses = cbg[guildKey]
+              if (!guildClasses) return
+              Object.values(guildClasses as any).forEach((players: any) => {
+                if (Array.isArray(players)) {
+                  players.forEach((p: any) => {
+                    const nick = p?.nick || p?.familia || ''
+                    const f = p?.familia || ''
+                    const n1 = normalize(nick)
+                    const n2 = normalize(f)
+                    if (n1) participants.add(n1)
+                    if (n2) participants.add(n2)
+                  })
+                }
+              })
+            }
+          })
+        }
+      } catch {
+        // silencioso
+      }
+
+      if (participants.size === 0) {
+        // Diagnóstico para entender o motivo
+        console.warn('GS Chernobyl: não foi possível identificar participantes. Guildas/nodes disponíveis:', {
+          guilds: currentRecord.guilds,
+          guild: currentRecord.guild,
+          hasPlayerStatsByGuild: !!currentRecord.playerStatsByGuild,
+          hasClassesByGuild: !!currentRecord.classes_by_guild
+        })
+        setChernError('Nenhum participante de Oxion/Guilty encontrado nesta node')
+        setChernLoading(false)
+        return
+      }
+
+      // Usa snapshots como base; se vazio, cai para scraping
+      const res = await fetch('/api/chernobyl-snapshots?limit=1', { cache: 'no-store' as RequestCache })
+      const j = await res.json()
+      let players: any[] = []
+      let guildAvgFromSnapshot = 0
+      if (j?.success && Array.isArray(j.data) && j.data[0]?.players) {
+        players = j.data[0].players
+        guildAvgFromSnapshot = Number(j.data[0]?.average_papd || 0)
+      } else {
+        // fallback: dispara scraping completo e usa o retorno
+        const resFull = await fetch('/api/chernobyl-scrape?guilds=Oxion,Guilty', { cache: 'no-store' as RequestCache })
+        const jf = await resFull.json()
+        if (jf?.success && Array.isArray(jf.data?.players)) {
+          players = jf.data.players
+        }
+      }
+
+      // Mantém apenas os jogadores PRESENTES na node (match normalizado por nome de exibição e família, quando possível)
+      const presentPlayers = players.filter((p: any) => {
+        const n = normalize(p?.nome || '')
+        return participants.has(n)
+      })
+      setChernGearscore(presentPlayers)
+      // Define GS médio da guilda: snapshot se disponível; fallback: média dos visíveis do scraping
+      if (guildAvgFromSnapshot > 0) {
+        setChernGuildAvg(guildAvgFromSnapshot)
+      } else {
+        const vis = players.filter((p: any) => p?.papd_maximo != null).map((p: any) => Number(p.papd_maximo))
+        const avg = vis.length ? Math.round(vis.reduce((a: number, b: number) => a + b, 0) / vis.length) : 0
+        setChernGuildAvg(avg)
+      }
+    } catch (e: any) {
+      setChernError(e?.message || 'Erro ao buscar GS Chernobyl')
+    } finally {
+      setChernLoading(false)
     }
   }
 
@@ -1545,6 +1674,7 @@ export function HistoryPage() {
                         <TabsTrigger value="matriz">Matriz</TabsTrigger>
                         <TabsTrigger value="kd-vs-guildas">KD vs Guildas</TabsTrigger>
                         <TabsTrigger value="gs-lollipop">GS Lollipop</TabsTrigger>
+                        <TabsTrigger value="gs-chernobyl">GS Chernobyl</TabsTrigger>
                       </TabsList>
 
                       <TabsContent value="resumo" className="space-y-6 mt-4">
@@ -2186,6 +2316,7 @@ export function HistoryPage() {
                                     <p className="text-xs text-neutral-400 mt-1">Média sem players da Manifest</p>
                                   </CardContent>
                                 </Card>
+                                {/* Removidos: cards específicos da Chernobyl */}
                               </div>
 
                               {/* Tabela de Players */}
@@ -2282,6 +2413,158 @@ export function HistoryPage() {
                           {!gsLoading && lollipopGearscore.length === 0 && !gsError && (
                             <div className="text-center py-8">
                               <p className="text-neutral-400">Nenhum dado de gearscore encontrado para a guilda Lollipop.</p>
+                            </div>
+                          )}
+                        </div>
+                      </TabsContent>
+
+                      <TabsContent value="gs-chernobyl" className="mt-4">
+                        <div className="space-y-6">
+                          <div className="flex items-center justify-between">
+                            <div>
+                              <h3 className="text-lg font-semibold text-neutral-100">GS Chernobyl (Oxion + Guilty)</h3>
+                              <p className="text-sm text-neutral-400">Com PAPD visível no site, via snapshot mais recente (ou scraping)</p>
+                            </div>
+                            <Button 
+                              onClick={fetchChernobylGearscore}
+                              disabled={chernLoading}
+                              variant="outline"
+                              size="sm"
+                            >
+                              {chernLoading ? (
+                                <>
+                                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                                  Carregando...
+                                </>
+                              ) : (
+                                <>
+                                  <RefreshCw className="h-4 w-4 mr-2" />
+                                  Atualizar
+                                </>
+                              )}
+                            </Button>
+                          </div>
+
+                          {chernError && (
+                            <div className="bg-red-900/20 border border-red-700 rounded-lg p-4">
+                              <p className="text-red-400 text-sm">{chernError}</p>
+                            </div>
+                          )}
+
+                          {chernGearscore.length > 0 && (
+                            <>
+                              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                                <Card className="bg-neutral-800 border-neutral-700">
+                                  <CardHeader className="pb-2">
+                                    <CardTitle className="text-sm font-medium text-neutral-300">Total de Jogadores</CardTitle>
+                                  </CardHeader>
+                                  <CardContent>
+                                    <div className="text-2xl font-bold text-neutral-100">{chernGearscore.length}</div>
+                                  </CardContent>
+                                </Card>
+
+                                <Card className="bg-neutral-800 border-neutral-700">
+                                  <CardHeader className="pb-2">
+                                    <CardTitle className="text-sm font-medium text-neutral-300">Com PAPD visível</CardTitle>
+                                  </CardHeader>
+                                  <CardContent>
+                                    <div className="text-2xl font-bold text-neutral-100">{chernGearscore.filter(p => p.papd_maximo != null).length}</div>
+                                  </CardContent>
+                                </Card>
+
+                                <Card className="bg-neutral-800 border-neutral-700">
+                                  <CardHeader className="pb-2">
+                                    <CardTitle className="text-sm font-medium text-neutral-300">GS médio (PAPD)</CardTitle>
+                                  </CardHeader>
+                                  <CardContent>
+                                    <div className="text-2xl font-bold text-neutral-100">
+                                      {(() => {
+                                        const vals = chernGearscore.filter(p => p.papd_maximo != null).map(p => p.papd_maximo as number)
+                                        if (vals.length === 0) return 0
+                                        return Math.round(vals.reduce((a,b)=>a+b,0)/vals.length)
+                                      })()}
+                                    </div>
+                                  </CardContent>
+                                </Card>
+
+                                <Card className="bg-neutral-800 border-neutral-700">
+                                  <CardHeader className="pb-2">
+                                    <CardTitle className="text-sm font-medium text-neutral-300">Somente presentes na node</CardTitle>
+                                  </CardHeader>
+                                  <CardContent>
+                                    <div className="text-2xl font-bold text-neutral-100">Oxion + Guilty</div>
+                                  </CardContent>
+                                </Card>
+
+                              </div>
+
+                              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+                                <Card className="bg-neutral-800 border-neutral-700">
+                                  <CardHeader className="pb-2">
+                                    <CardTitle className="text-sm font-medium text-neutral-300">GS médio da Guilda (snapshot)</CardTitle>
+                                  </CardHeader>
+                                  <CardContent>
+                                    <div className="text-2xl font-bold text-neutral-100">{chernGuildAvg}</div>
+                                    <p className="text-xs text-neutral-400 mt-1">Públicos + Privados (estimado)</p>
+                                  </CardContent>
+                                </Card>
+
+                                <Card className="bg-neutral-800 border-neutral-700">
+                                  <CardHeader className="pb-2">
+                                    <CardTitle className="text-sm font-medium text-neutral-300">GS médio (estimando privados = 830)</CardTitle>
+                                  </CardHeader>
+                                  <CardContent>
+                                    <div className="text-2xl font-bold text-neutral-100">{presentEstimatedAvg}</div>
+                                    <p className="text-xs text-neutral-400 mt-1">Somente presentes (públicos + privados=830)</p>
+                                  </CardContent>
+                                </Card>
+                              </div>
+
+                              {/* Gráfico de GS médio por registro (simplificado) */}
+                              {/* Gráfico removido a pedido */}
+
+                              <Card className="bg-neutral-800 border-neutral-700">
+                                <CardHeader>
+                                  <CardTitle className="text-neutral-100">Jogadores (PAPD visível primeiro)</CardTitle>
+                                </CardHeader>
+                                <CardContent>
+                                  <div className="overflow-x-auto">
+                                    <table className="w-full text-sm">
+                                      <thead>
+                                        <tr className="border-b border-neutral-700 text-neutral-400">
+                                          <th className="w-12 text-left py-2 px-2">#</th>
+                                          <th className="text-left py-2 px-2">Player</th>
+                                          <th className="text-right py-2 px-2">PAPD</th>
+                                          <th className="text-left py-2 px-2">Perfil</th>
+                                        </tr>
+                                      </thead>
+                                      <tbody>
+                                        {chernGearscore
+                                          .slice()
+                                          .sort((a,b) => (b.papd_maximo || 0) - (a.papd_maximo || 0))
+                                          .map((p, i) => (
+                                            <tr key={`${p.nome}-${i}`} className="border-b border-neutral-700 hover:bg-neutral-700/50">
+                                              <td className="py-2 px-2 text-neutral-400">{i + 1}</td>
+                                              <td className="py-2 px-2">
+                                                <a href={p.url} target="_blank" rel="noreferrer" className="text-neutral-100 hover:underline">
+                                                  {p.nome}
+                                                </a>
+                                              </td>
+                                              <td className="py-2 px-2 text-right font-mono text-neutral-300">{p.papd_maximo ?? '-'}</td>
+                                              <td className="py-2 px-2 text-left text-neutral-300">{p.perfil_privado ? 'Privado' : 'Público'}</td>
+                                            </tr>
+                                          ))}
+                                      </tbody>
+                                    </table>
+                                  </div>
+                                </CardContent>
+                              </Card>
+                            </>
+                          )}
+
+                          {!chernLoading && chernGearscore.length === 0 && !chernError && (
+                            <div className="text-center py-8">
+                              <p className="text-neutral-400">Nenhum dado Chernobyl carregado. Clique em Atualizar.</p>
                             </div>
                           )}
                         </div>

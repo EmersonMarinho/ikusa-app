@@ -13,6 +13,7 @@ const navigation = [
   { name: "Comparar", href: "/compare" },
   { name: "KDA Mensal", href: "/kda-mensal" },
   { name: "Gearscore", href: "/gearscore" },
+  { name: "Chernobyl", href: "/chernobyl" },
 ]
 
 export function Header() {
