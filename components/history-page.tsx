@@ -15,6 +15,7 @@ import { CollapsibleClassItem } from "@/components/shared/collapsible-class-item
 import { GuildFilterChips } from "@/components/shared/guild-filter-chips"
 import { StatsCard } from "@/components/shared/stats-card"
 import { getGuildBadgeClasses } from "@/lib/guild-colors"
+import { isValidForStats } from "@/lib/player-filters"
 import {
   FileTextIcon,
   EyeIcon,
@@ -2132,23 +2133,14 @@ export function HistoryPage() {
                                   <CardContent>
                                     <div className="text-2xl font-bold text-neutral-100">
                                       {(() => {
-                                        // Filtra players com GS válido, excluindo Shai e players de defesa
                                         const playersWithGS = lollipopGearscore.filter(p => p.gearscore > 0)
-                                        const validPlayers = playersWithGS.filter(player => {
-                                          // Exclui classe Shai
-                                          if (player.main_class === 'Shai') return false
-                                          
-                                          // Exclui players específicos de defesa
-                                          const defensePlayers = [
-                                            'Teste', 'Lagswitch', 'GarciaGil', 'OAT', 'Haleluya', 
-                                            'Fberg', 'Dxvn', 'ZeDoBambu', 'KingThePower', "Faellz",
-                                            "OverBlow", "Schwarzfang", "Vallimi", "Witte", "Miih",
-                                          ]
-                                          if (defensePlayers.includes(player.family_name)) return false
-                                          
-                                          return true
-                                        })
-                                        
+                                        const validPlayers = playersWithGS.filter(player =>
+                                          isValidForStats({
+                                            familyName: player.family_name,
+                                            characterName: player.character_name,
+                                            mainClass: player.main_class,
+                                          })
+                                        )
                                         return validPlayers.length
                                       })()}
                                     </div>
@@ -2175,22 +2167,14 @@ export function HistoryPage() {
                                   <CardContent>
                                     <div className="text-2xl font-bold text-neutral-100">
                                       {(() => {
-                                        // Filtra players com GS válido, excluindo Shai e players de defesa
                                         const playersWithGS = lollipopGearscore.filter(p => p.gearscore > 0)
-                                        const validPlayers = playersWithGS.filter(player => {
-                                          // Exclui classe Shai
-                                          if (player.main_class === 'Shai') return false
-                                          
-                                          // Exclui players específicos de defesa
-                                          const defensePlayers = [
-                                            'Teste', 'Lagswitch', 'GarciaGil', 'OAT', 'Haleluya', 
-                                            'Fberg', 'Dxvn', 'ZeDoBambu', 'KingThePower'
-                                          ]
-                                          if (defensePlayers.includes(player.family_name)) return false
-                                          
-                                          return true
-                                        })
-                                        
+                                        const validPlayers = playersWithGS.filter(player =>
+                                          isValidForStats({
+                                            familyName: player.family_name,
+                                            characterName: player.character_name,
+                                            mainClass: player.main_class,
+                                          })
+                                        )
                                         if (validPlayers.length === 0) return 0
                                         return Math.round(
                                           validPlayers.reduce((sum, player) => sum + player.gearscore, 0) / 
@@ -2210,13 +2194,9 @@ export function HistoryPage() {
                                   <CardContent>
                                     {(() => {
                                       const playersWithGS = lollipopGearscore.filter(p => p.gearscore > 0)
-                                      const valid = playersWithGS.filter(player => {
-                                        if (player.main_class === 'Shai') return false
-                                        const defensePlayers = ['Teste','Lagswitch','GarciaGil','OAT','Haleluya','Fberg','Dxvn','ZeDoBambu','KingThePower']
-                                        if (defensePlayers.includes(player.family_name)) return false
-                                        const guild = familyToGuild[player.family_name?.toLowerCase?.() || '']
-                                        return guild === 'Allyance'
-                                      })
+                                      const valid = playersWithGS
+                                        .filter(player => isValidForStats({ familyName: player.family_name, characterName: player.character_name, mainClass: player.main_class }))
+                                        .filter(player => (familyToGuild[player.family_name?.toLowerCase?.() || ''] === 'Allyance'))
                                       const count = valid.length
                                       const avg = count === 0 ? 0 : Math.round(valid.reduce((s,p)=> s + p.gearscore, 0) / count)
                                       return (
@@ -2237,13 +2217,9 @@ export function HistoryPage() {
                                   <CardContent>
                                     {(() => {
                                       const playersWithGS = lollipopGearscore.filter(p => p.gearscore > 0)
-                                      const valid = playersWithGS.filter(player => {
-                                        if (player.main_class === 'Shai') return false
-                                        const defensePlayers = ['Teste','Lagswitch','GarciaGil','OAT','Haleluya','Fberg','Dxvn','ZeDoBambu','KingThePower']
-                                        if (defensePlayers.includes(player.family_name)) return false
-                                        const guild = familyToGuild[player.family_name?.toLowerCase?.() || '']
-                                        return guild === 'Grand_Order'
-                                      })
+                                      const valid = playersWithGS
+                                        .filter(player => isValidForStats({ familyName: player.family_name, characterName: player.character_name, mainClass: player.main_class }))
+                                        .filter(player => (familyToGuild[player.family_name?.toLowerCase?.() || ''] === 'Grand_Order'))
                                       const count = valid.length
                                       const avg = count === 0 ? 0 : Math.round(valid.reduce((s,p)=> s + p.gearscore, 0) / count)
                                       return (
@@ -2264,13 +2240,9 @@ export function HistoryPage() {
                                   <CardContent>
                                     {(() => {
                                       const playersWithGS = lollipopGearscore.filter(p => p.gearscore > 0)
-                                      const valid = playersWithGS.filter(player => {
-                                        if (player.main_class === 'Shai') return false
-                                        const defensePlayers = ['Teste','Lagswitch','GarciaGil','OAT','Haleluya','Fberg','Dxvn','ZeDoBambu','KingThePower']
-                                        if (defensePlayers.includes(player.family_name)) return false
-                                        const guild = familyToGuild[player.family_name?.toLowerCase?.() || '']
-                                        return guild === 'Manifest'
-                                      })
+                                      const valid = playersWithGS
+                                        .filter(player => isValidForStats({ familyName: player.family_name, characterName: player.character_name, mainClass: player.main_class }))
+                                        .filter(player => (familyToGuild[player.family_name?.toLowerCase?.() || ''] === 'Manifest'))
                                       const count = valid.length
                                       const avg = count === 0 ? 0 : Math.round(valid.reduce((s,p)=> s + p.gearscore, 0) / count)
                                       return (
@@ -2291,17 +2263,11 @@ export function HistoryPage() {
                                   <CardContent>
                                     <div className="text-2xl font-bold text-neutral-100">
                                       {(() => {
-                                        // Mesma filtragem de GS válido + remove Manifest
                                         const playersWithGS = lollipopGearscore.filter(p => p.gearscore > 0)
                                         // 1) aplica filtros base (Shai e Defesa)
-                                        const baseValid = playersWithGS.filter(player => {
-                                          if (player.main_class === 'Shai') return false
-                                          const defensePlayers = [
-                                            'Teste','Lagswitch','GarciaGil','OAT','Haleluya','Fberg','Dxvn','ZeDoBambu','KingThePower'
-                                          ]
-                                          if (defensePlayers.includes(player.family_name)) return false
-                                          return true
-                                        })
+                                        const baseValid = playersWithGS.filter(p =>
+                                          isValidForStats({ familyName: p.family_name, characterName: p.character_name, mainClass: p.main_class })
+                                        )
                                         // 2) identifica Manifest que serão excluídos
                                         const manifestExcluded = baseValid.filter(p => (familyToGuild[p.family_name?.toLowerCase?.() || ''] === 'Manifest'))
                                         if (manifestExcluded.length > 0) {

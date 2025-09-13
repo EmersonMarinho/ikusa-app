@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { isValidForStats, computeGearscore } from '@/lib/player-filters'
 
 // Configuração do Supabase
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
@@ -217,22 +218,14 @@ export async function GET(request: NextRequest) {
     // Calcula estatísticas da guilda
     const validPlayers = players.filter(player => player.gearscore > 0)
     
-    // Filtra players para estatísticas (exclui Shai e players específicos)
-    const playersForStats = validPlayers.filter(player => {
-      // Exclui classe Shai
-      if (player.main_class.toLowerCase() === 'shai') return false
-      
-      // Exclui players específicos
-      const excludedPlayers = [
-        'teste', 'lagswitch', 'garciagil', 'oat', 'haleluya', 'fberg', 'dxvn', "ZeDoBambu", "KingThePower"
-      ]
-      if (excludedPlayers.some(name => 
-        player.family_name.toLowerCase().includes(name.toLowerCase()) ||
-        player.character_name.toLowerCase().includes(name.toLowerCase())
-      )) return false
-      
-      return true
-    })
+    // Filtra players para estatísticas (exclui Shai e Defesa, centralizado)
+    const playersForStats = validPlayers.filter(player =>
+      isValidForStats({
+        familyName: player.family_name,
+        characterName: player.character_name,
+        mainClass: player.main_class,
+      })
+    )
     
     const totalPlayers = playersForStats.length
     const totalGearscore = playersForStats.reduce((sum, player) => sum + player.gearscore, 0)

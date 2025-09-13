@@ -25,6 +25,7 @@ import {
   AlertCircleIcon
 } from "lucide-react"
 import { Label } from "@/components/ui/label"
+import { isDefensePlayer, computeGearscore } from "@/lib/player-filters"
 
 // Interfaces
 interface PlayerGearscore {
@@ -223,18 +224,12 @@ export function GearscorePageComponent() {
     const allowedGuilds = ['Manifest', 'Allyance', 'Grand_Order']
     const sum: Record<string, { gs: number; count: number; gsPrev: number; countPrev: number }> = {}
     for (const g of allowedGuilds) sum[g] = { gs: 0, count: 0, gsPrev: 0, countPrev: 0 }
-    // Lista de players de defesa a serem excluídos da média (por família)
-    const defensePlayers = [
-      'teste','lagswitch','garciagil','oat','haleluya','fberg','dxvn','zedobambu','kingthepower','faellz','overblow','schwarzfang','vallimi','witte','miih'
-    ]
     for (const p of players) {
       const g = familyToGuild[p.family_name?.toLowerCase?.() || '']
       if (!allowedGuilds.includes(g)) continue
-      const isDefense = String(p.main_class || '').toLowerCase() === 'defesa'
-      const isDefenseByName = defensePlayers.includes(String(p.family_name || '').toLowerCase())
       // Médias por Guilda: mantém Shai, remove somente Defesa (classe) e nicks listados
-      if (isDefense || isDefenseByName) continue
-      const gsCurr = Math.max(Number(p.ap || 0), Number(p.aap || 0)) + Number(p.dp || 0)
+      if (isDefensePlayer({ familyName: p.family_name, characterName: p.character_name, mainClass: p.main_class })) continue
+      const gsCurr = computeGearscore(p.ap, p.aap, p.dp)
       sum[g].gs += gsCurr
       sum[g].count += 1
       const prev = (p as any).prev_gearscore
@@ -287,7 +282,7 @@ export function GearscorePageComponent() {
     return "text-green-600"
   }
 
-  const computePlayerGS = (p: PlayerGearscore) => Math.max(Number(p.ap || 0), Number(p.aap || 0)) + Number(p.dp || 0)
+  const computePlayerGS = (p: PlayerGearscore) => computeGearscore(p.ap, p.aap, p.dp)
 
   const getClassColor = (className: string) => {
     const colors: Record<string, string> = {
