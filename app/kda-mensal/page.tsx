@@ -9,6 +9,7 @@ import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Accordion, AccordionItem, AccordionTrigger, AccordionContent } from "@/components/ui/accordion"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Switch } from "@/components/ui/switch"
 import { 
   UsersIcon, 
   SwordIcon, 
@@ -115,6 +116,7 @@ function KDAMensalPageContent() {
   const [isLoading, setIsLoading] = useState(false)
   const [lastUpdate, setLastUpdate] = useState<Date | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [nodesOnly, setNodesOnly] = useState<boolean>(false)
   
   // Dados agrupados por família
   const [familyGroupedData, setFamilyGroupedData] = useState<FamilyGroupedData[]>([])
@@ -212,7 +214,9 @@ function KDAMensalPageContent() {
     
     try {
       // Força recarregamento sem cache na Vercel
-      const response = await fetch(`/api/process-monthly-kda?month=${targetMonth}`, {
+      const params = new URLSearchParams({ month: targetMonth })
+      if (nodesOnly) params.set('nodes_only', 'true')
+      const response = await fetch(`/api/process-monthly-kda?${params.toString()}`, {
         cache: 'no-store',
         headers: {
           'Cache-Control': 'no-cache',
@@ -416,7 +420,7 @@ function KDAMensalPageContent() {
 
   useEffect(() => {
     loadMonthlyKDAData(selectedMonth)
-  }, [selectedMonth])
+  }, [selectedMonth, nodesOnly])
 
   // Estatísticas da aliança
   const allianceStats = {
@@ -560,6 +564,10 @@ function KDAMensalPageContent() {
                 onChange={(e) => setSelectedMonth(e.target.value)}
                 className="bg-neutral-800 border border-neutral-700 rounded px-2 py-1 text-neutral-200 text-sm"
               />
+            </div>
+            <div className="flex items-center gap-2">
+              <Switch id="nodes-only" checked={nodesOnly} onCheckedChange={setNodesOnly} />
+              <Label htmlFor="nodes-only" className="text-sm text-neutral-300">Apenas Nodes (excluir Siege)</Label>
             </div>
           </div>
           

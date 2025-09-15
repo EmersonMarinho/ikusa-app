@@ -215,7 +215,10 @@ export async function getMonthlyHistory(): Promise<MonthlyConfig[]> {
 }
 
 // Função para buscar logs da aliança por período
-export async function getAllianceLogsByMonth(monthYear: string): Promise<any[]> {
+export async function getAllianceLogsByMonth(
+  monthYear: string,
+  options?: { includeSiege?: boolean }
+): Promise<any[]> {
   // Calcula início e fim reais do mês (evita datas inválidas como dia 31 em meses com 30 dias)
   let startDate = `${monthYear}-01T00:00:00Z`
   let endDate = `${monthYear}-31T23:59:59Z`
@@ -231,12 +234,17 @@ export async function getAllianceLogsByMonth(monthYear: string): Promise<any[]> 
     }
   } catch {}
   
-  const { data, error } = await supabase
+  let query = supabase
     .from('process_logs')
     .select('*')
     .gte('created_at', startDate)
     .lte('created_at', endDate)
-    .order('created_at', { ascending: false })
+
+  if (options?.includeSiege === false) {
+    query = query.neq('territorio', 'Siege')
+  }
+
+  const { data, error } = await query.order('created_at', { ascending: false })
 
   if (error) {
     console.error('Erro ao buscar logs da aliança:', error)

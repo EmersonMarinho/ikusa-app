@@ -498,11 +498,12 @@ export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
     const monthYear = searchParams.get('month') || new Date().toISOString().slice(0, 7)
+    const nodesOnly = searchParams.get('nodes_only') === 'true'
     
     console.log(`🔍 Buscando KDA mensal para: ${monthYear}`)
     
-    // Busca logs do mês especificado
-    const logs = await getAllianceLogsByMonth(monthYear)
+    // Busca logs do mês especificado (opcionalmente exclui Siege)
+    const logs = await getAllianceLogsByMonth(monthYear, { includeSiege: !nodesOnly })
     console.log(`📊 Encontrados ${logs.length} logs para ${monthYear}`)
     
     if (logs.length === 0) {
