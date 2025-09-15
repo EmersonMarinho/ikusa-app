@@ -98,6 +98,10 @@ export async function GET(request: NextRequest) {
     const sortBy = searchParams.get('sortBy') || 'gearscore'
     const order = searchParams.get('order') || 'desc'
     const includeHistory = searchParams.get('history') === 'true'
+    const asOfParam = searchParams.get('asOf') // ISO date-time, usaremos para congelar GS
+    const closest = searchParams.get('closest') === '1'
+    const windowDays = Math.max(0, parseInt(searchParams.get('windowDays') || '7', 10) || 7)
+    const skipAllianceFilter = searchParams.get('skipAllianceFilter') === '1'
     const userId = searchParams.get('userId')
 
     // Carrega famílias válidas da aliança
@@ -135,11 +139,37 @@ export async function GET(request: NextRequest) {
     }
 
     // Processa os dados para o formato esperado
+    const asOf = asOfParam ? new Date(asOfParam) : null
     const playersUnfiltered: (PlayerGearscore & { prev_gearscore?: number | null; prev_recorded_at?: string | null })[] = playersData?.map(player => {
-      // Pega o gearscore mais recente do histórico
-      const gearscoreHistory = (player.gearscore_history || []).sort((a: any, b: any) => new Date(b.recorded_at).getTime() - new Date(a.recorded_at).getTime())
-      const latestGearscore = gearscoreHistory[0] || null
-      const previousGearscore = gearscoreHistory[1] || null
+      // Ordena histórico e seleciona snapshot por data
+      const gearscoreHistory = (player.gearscore_history || [])
+        .filter((h: any) => h && h.recorded_at)
+        .sort((a: any, b: any) => new Date(b.recorded_at).getTime() - new Date(a.recorded_at).getTime())
+
+      let latestGearscore = gearscoreHistory[0] || null
+      let previousGearscore = gearscoreHistory[1] || null
+
+      if (asOf && !isNaN(asOf.getTime())) {
+        // Encontra o snapshot mais recente <= asOf
+        let byAsOf = gearscoreHistory.find((h: any) => new Date(h.recorded_at).getTime() <= asOf.getTime()) || null
+        if (!byAsOf && closest && windowDays > 0) {
+          const windowMs = windowDays * 24 * 60 * 60 * 1000
+          const candidates = gearscoreHistory.filter((h: any) => Math.abs(new Date(h.recorded_at).getTime() - asOf.getTime()) <= windowMs)
+          if (candidates.length > 0) {
+            // Escolhe o mais próximo por distância absoluta ao asOf
+            candidates.sort((a: any, b: any) => Math.abs(new Date(a.recorded_at).getTime() - asOf.getTime()) - Math.abs(new Date(b.recorded_at).getTime() - asOf.getTime()))
+            byAsOf = candidates[0]
+          }
+        }
+        if (byAsOf) {
+          latestGearscore = byAsOf
+          const idx = gearscoreHistory.findIndex((h: any) => h === byAsOf)
+          previousGearscore = idx >= 0 ? (gearscoreHistory[idx + 1] || null) : null
+        } else {
+          latestGearscore = null
+          previousGearscore = null
+        }
+      }
 
       if (!latestGearscore) {
         // Se não há histórico, retorna valores padrão
@@ -181,6 +211,7 @@ export async function GET(request: NextRequest) {
     const players: PlayerGearscore[] = playersUnfiltered
       .filter(player => player.gearscore > 0)
       .filter(player => {
+        if (skipAllianceFilter) return true
         // Se não conseguimos obter o cache (vazio), não bloqueia
         if (allianceFamilies.size === 0) return true
         return allianceFamilies.has(normalizeFamilia(player.family_name))

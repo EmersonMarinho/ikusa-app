@@ -11,6 +11,7 @@ import {
   ShieldIcon
 } from "lucide-react"
 import { ClassDetailsModal } from "./class-details-modal"
+import { FamilyNodesModal } from "./family-nodes-modal"
 
 interface FamilyCardProps {
   familia: string
@@ -32,6 +33,7 @@ interface FamilyCardProps {
 export function FamilyCard({ familia, guilda, classes, nodes_count, log_ids }: FamilyCardProps) {
   const [selectedClass, setSelectedClass] = useState<string | null>(null)
   const [isModalOpen, setIsModalOpen] = useState(false)
+  const [isLogsModalOpen, setIsLogsModalOpen] = useState(false)
 
   // Calcula totais da família
   const totalKills = classes.reduce((sum, c) => sum + c.kills, 0)
@@ -53,6 +55,9 @@ export function FamilyCard({ familia, guilda, classes, nodes_count, log_ids }: F
     setIsModalOpen(false)
     setSelectedClass(null)
   }
+
+  const openLogsModal = () => setIsLogsModalOpen(true)
+  const closeLogsModal = () => setIsLogsModalOpen(false)
 
   const getGuildColor = (guild: string) => {
     switch (guild) {
@@ -159,12 +164,12 @@ export function FamilyCard({ familia, guilda, classes, nodes_count, log_ids }: F
                 Última atividade: {new Date(Math.max(...classes.map(c => new Date(c.last_played).getTime()))).toLocaleDateString('pt-BR')}
               </div>
               {Array.isArray(log_ids) && log_ids.length > 0 && (
-                <a
-                  href={`/history?familia=${encodeURIComponent(familia)}`}
+                <button
+                  onClick={openLogsModal}
                   className="text-blue-400 hover:text-blue-300 underline-offset-2 hover:underline"
                 >
                   Ver {log_ids.length} registro(s)
-                </a>
+                </button>
               )}
             </div>
           )}
@@ -179,6 +184,15 @@ export function FamilyCard({ familia, guilda, classes, nodes_count, log_ids }: F
           familia={familia}
           classe={selectedClass}
           classStats={classes.find(c => c.classe === selectedClass)!}
+        />
+      )}
+
+      {Array.isArray(log_ids) && log_ids.length > 0 && (
+        <FamilyNodesModal
+          isOpen={isLogsModalOpen}
+          onClose={closeLogsModal}
+          familia={familia}
+          logIds={log_ids}
         />
       )}
     </>

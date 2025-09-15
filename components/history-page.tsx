@@ -296,7 +296,10 @@ export function HistoryPage() {
       console.log('🔍 ===== BUSCANDO GEARSCORE =====')
       
       // 2. Busca gearscore de todos os players da Lollipop
-      const response = await fetch('/api/players-gearscore?guild=lollipop&limit=0', { cache: 'no-store' as RequestCache })
+      // Congela o GS como estava na data do evento (asOf)
+      const asOf = encodeURIComponent(nodeData.event_date || nodeData.created_at)
+      // Amplia janela e ignora filtro de aliança atual para registros antigos
+      const response = await fetch(`/api/players-gearscore?guild=lollipop&limit=0&asOf=${asOf}&closest=1&windowDays=60&skipAllianceFilter=1`, { cache: 'no-store' as RequestCache })
       const data = await response.json()
 
       if (data.success) {
@@ -306,11 +309,10 @@ export function HistoryPage() {
         const participantsWithGearscore: any[] = []
         const participantsWithoutGearscore: any[] = []
         
+        const norm = (s: string) => String(s || '').toLowerCase().trim()
         lollipopParticipants.forEach(participant => {
           // Busca gearscore do participant
-          const gearscorePlayer = data.data.players.find((player: any) => 
-            player.family_name.toLowerCase() === participant.familia.toLowerCase()
-          )
+          const gearscorePlayer = data.data.players.find((player: any) => norm(player.family_name) === norm(participant.familia))
           
           if (gearscorePlayer && gearscorePlayer.gearscore > 0) {
             // Participant tem gearscore válido
