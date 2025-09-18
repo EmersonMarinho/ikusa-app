@@ -133,6 +133,8 @@ function KDAMensalPageContent() {
   const [topN, setTopN] = useState<number>(10)
   // Filtro de classe na tabela principal
   const [tableClass, setTableClass] = useState<string>('all')
+  // Filtro de classe na visualização por família
+  const [familyClassFilter, setFamilyClassFilter] = useState<string>('all')
 
   // Ordenação da tabela de jogadores
   type SortKey = 'player_nick' | 'player_familia' | 'guilda' | 'classes' | 'total_kills' | 'total_deaths' | 'kd_overall' | 'kd_vs_chernobyl' | 'kd_vs_others'
@@ -752,6 +754,7 @@ function KDAMensalPageContent() {
                         const filteredFamilies = familyGroupedData.filter(family => {
                           if (filters.guilda !== 'all' && family.guilda !== filters.guilda) return false
                           if (filters.familyName && !family.familia.toLowerCase().includes(filters.familyName.toLowerCase())) return false
+                          if (familyClassFilter !== 'all' && !family.classes.some(c => c.classe === familyClassFilter)) return false
                           return true
                         })
                         return `${filteredFamilies.length} de ${familyGroupedData.length} famílias`
@@ -764,6 +767,24 @@ function KDAMensalPageContent() {
                         value={filters.familyName || ''}
                         onChange={(e) => setFilters(prev => ({ ...prev, familyName: e.target.value }))}
                       />
+                      <Select
+                        value={familyClassFilter}
+                        onValueChange={setFamilyClassFilter}
+                      >
+                        <SelectTrigger className="w-48 bg-neutral-800 border-neutral-700 text-neutral-200">
+                          <SelectValue placeholder="Filtrar por classe" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="all">Todas as Classes</SelectItem>
+                          {Array.from(new Set(
+                            familyGroupedData.flatMap(f => f.classes.map(c => c.classe))
+                          ))
+                            .sort((a, b) => a.localeCompare(b, 'pt'))
+                            .map((cls) => (
+                              <SelectItem key={cls} value={cls}>{cls}</SelectItem>
+                            ))}
+                        </SelectContent>
+                      </Select>
                       <Select
                         value={filters.guilda}
                         onValueChange={(value) => setFilters(prev => ({ ...prev, guilda: value }))}
@@ -790,6 +811,9 @@ function KDAMensalPageContent() {
                            
                            // Filtro por nome da família
                            if (filters.familyName && !family.familia.toLowerCase().includes(filters.familyName.toLowerCase())) return false
+                           
+                           // Filtro por classe
+                           if (familyClassFilter !== 'all' && !family.classes.some(c => c.classe === familyClassFilter)) return false
                            
                            return true
                          })
