@@ -354,6 +354,10 @@ export async function POST(request: NextRequest) {
       const formData = await request.formData()
       const file = formData.get('file') as File
       const guild = formData.get('guild') as string || 'lollipop'
+      const dryRun = (() => {
+        const v = String(formData.get('dryRun') || '').toLowerCase()
+        return v === '1' || v === 'true'
+      })()
       
       if (!file) {
         return NextResponse.json({
@@ -386,30 +390,140 @@ export async function POST(request: NextRequest) {
       const allianceFamilies = await getAllianceFamiliesSet()
 
       let successCount = 0
+      let skippedCount = 0
       let errorCount = 0
       const errors: string[] = []
+      const insertedFamilies: Array<{
+        user_id: number;
+        family_name: string;
+        ap: number;
+        aap: number;
+        dp: number;
+        gearscore: number;
+        prev_ap?: number;
+        prev_aap?: number;
+        prev_dp?: number;
+        prev_gearscore?: number;
+        delta_ap?: number;
+        delta_aap?: number;
+        delta_dp?: number;
+        delta_gearscore?: number;
+      }> = []
+      const skippedFamilies: Array<{
+        user_id: number;
+        family_name: string;
+        ap: number;
+        aap: number;
+        dp: number;
+        gearscore: number;
+        prev_ap?: number;
+        prev_aap?: number;
+        prev_dp?: number;
+        prev_gearscore?: number;
+        delta_ap?: number;
+        delta_aap?: number;
+        delta_dp?: number;
+        delta_gearscore?: number;
+        reason?: string;
+      }> = []
+      const failedFamilies: Array<{ user_id?: number; family_name?: string; reason: string }> = []
 
       // Processa cada player do arquivo
       for (const playerData of playersData) {
         try {
           const { user_id, family_name, character_name, main_class, ap, aap, dp, link_gear } = playerData
           
-          if (!user_id || !family_name || !character_name || !main_class || !ap || !aap || !dp) {
+          // Validação robusta: permite 0 e checa null/undefined
+          if (
+            user_id == null || user_id === '' ||
+            family_name == null || family_name === '' ||
+            character_name == null || character_name === '' ||
+            main_class == null || main_class === '' ||
+            ap == null || aap == null || dp == null
+          ) {
             errorCount++
-            errors.push(`Player ${family_name}: Dados obrigatórios faltando`)
+            const reason = 'Dados obrigatórios faltando'
+            errors.push(`Player ${family_name}: ${reason}`)
+            failedFamilies.push({ user_id: Number(user_id), family_name, reason })
             continue
           }
 
           // Ignora jogadores fora da aliança quando cache disponível
           if (allianceFamilies.size > 0 && !allianceFamilies.has(normalizeFamilia(family_name))) {
             errorCount++
-            errors.push(`Player ${family_name}: fora da aliança, ignorado`)
+            const reason = 'Fora da aliança'
+            errors.push(`Player ${family_name}: ${reason}`)
+            failedFamilies.push({ user_id: Number(user_id), family_name, reason })
             continue
           }
 
           const gearscore = Math.max(ap, aap) + dp
 
           // 1. Insere/atualiza player na tabela players
+          // 1. Deduplicação: verifica último registro
+          const { data: lastArr, error: lastErr } = await supabase
+            .from('gearscore_history')
+            .select('ap,aap,dp,recorded_at')
+            .eq('user_id', parseInt(user_id))
+            .order('recorded_at', { ascending: false })
+            .limit(1)
+
+          if (lastErr) {
+            // Não bloqueia processamento por erro de leitura; segue para inserir
+          }
+
+          const last = Array.isArray(lastArr) && lastArr.length > 0 ? lastArr[0] : null
+          const prev_ap = last ? Number(last.ap) : undefined
+          const prev_aap = last ? Number(last.aap) : undefined
+          const prev_dp = last ? Number(last.dp) : undefined
+          const prev_gearscore = last ? Math.max(Number(last.ap), Number(last.aap)) + Number(last.dp) : undefined
+
+          if (last && Number(last.ap) === Number(ap) && Number(last.aap) === Number(aap) && Number(last.dp) === Number(dp)) {
+            // Sem mudanças -> ignora para manter a data de última atualização real
+            skippedCount++
+            skippedFamilies.push({
+              user_id: Number(user_id),
+              family_name,
+              ap: Number(ap),
+              aap: Number(aap),
+              dp: Number(dp),
+              gearscore: Number(gearscore),
+              prev_ap,
+              prev_aap,
+              prev_dp,
+              prev_gearscore,
+              delta_ap: 0,
+              delta_aap: 0,
+              delta_dp: 0,
+              delta_gearscore: 0,
+              reason: 'sem mudança'
+            })
+            continue
+          }
+
+          if (dryRun) {
+            // Não grava nada, apenas contabiliza como inserção potencial
+            successCount++
+            insertedFamilies.push({
+              user_id: Number(user_id),
+              family_name,
+              ap: Number(ap),
+              aap: Number(aap),
+              dp: Number(dp),
+              gearscore: Number(gearscore),
+              prev_ap,
+              prev_aap,
+              prev_dp,
+              prev_gearscore,
+              delta_ap: prev_ap != null ? Number(ap) - prev_ap : undefined,
+              delta_aap: prev_aap != null ? Number(aap) - prev_aap : undefined,
+              delta_dp: prev_dp != null ? Number(dp) - prev_dp : undefined,
+              delta_gearscore: prev_gearscore != null ? Number(gearscore) - prev_gearscore : undefined,
+            })
+            continue
+          }
+
+          // 2. Insere/atualiza player na tabela players
           const { data: player, error: playerError } = await supabase
             .from('players')
             .upsert({
@@ -427,10 +541,10 @@ export async function POST(request: NextRequest) {
           if (playerError) {
             errorCount++
             errors.push(`Player ${family_name}: ${playerError.message}`)
+            failedFamilies.push({ user_id: Number(user_id), family_name, reason: playerError.message })
             continue
           }
 
-          // 2. Insere novo registro de gearscore no histórico
           const { error: historyError } = await supabase
             .from('gearscore_history')
             .insert({
@@ -445,23 +559,32 @@ export async function POST(request: NextRequest) {
           if (historyError) {
             errorCount++
             errors.push(`Player ${family_name}: ${historyError.message}`)
+            failedFamilies.push({ user_id: Number(user_id), family_name, reason: historyError.message })
             continue
           }
 
           successCount++
+          insertedFamilies.push({ user_id: Number(user_id), family_name, ap: Number(ap), aap: Number(aap), dp: Number(dp), gearscore: Number(gearscore) })
         } catch (playerError) {
           errorCount++
-          errors.push(`Player ${playerData.family_name || 'Desconhecido'}: Erro de processamento`)
+          const reason = 'Erro de processamento'
+          errors.push(`Player ${playerData.family_name || 'Desconhecido'}: ${reason}`)
+          failedFamilies.push({ user_id: Number((playerData as any)?.user_id), family_name: (playerData as any)?.family_name, reason })
         }
       }
 
       return NextResponse.json({
         success: true,
-        message: `Upload concluído: ${successCount} players processados com sucesso, ${errorCount} erros`,
+        message: `${dryRun ? 'Prévia' : 'Upload'} concluído: ${successCount} inserções, ${skippedCount} sem mudança, ${errorCount} erros`,
         data: {
+          dryRun: dryRun ? true : undefined,
           successCount,
+          skippedCount,
           errorCount,
-          errors: errors.length > 0 ? errors : undefined
+          errors: errors.length > 0 ? errors : undefined,
+          inserted: insertedFamilies,
+          skipped: skippedFamilies,
+          failed: failedFamilies
         }
       })
 
@@ -469,7 +592,14 @@ export async function POST(request: NextRequest) {
       // Dados individuais (comportamento original)
       const { user_id, family_name, character_name, main_class, ap, aap, dp, link_gear } = await request.json()
       
-      if (!user_id || !family_name || !character_name || !main_class || !ap || !aap || !dp) {
+      // Validação robusta: permite 0 e checa null/undefined
+      if (
+        user_id == null || user_id === '' ||
+        family_name == null || family_name === '' ||
+        character_name == null || character_name === '' ||
+        main_class == null || main_class === '' ||
+        ap == null || aap == null || dp == null
+      ) {
         return NextResponse.json({
           success: false,
           error: 'Dados obrigatórios não fornecidos'
@@ -512,7 +642,30 @@ export async function POST(request: NextRequest) {
         }, { status: 500 })
       }
 
-      // 2. Insere novo registro de gearscore no histórico
+      // 2. Deduplicação: verifica último registro e só insere se mudou
+      const { data: lastArr, error: lastErr } = await supabase
+        .from('gearscore_history')
+        .select('ap,aap,dp,recorded_at')
+        .eq('user_id', parseInt(user_id))
+        .order('recorded_at', { ascending: false })
+        .limit(1)
+
+      if (!lastErr) {
+        const last = Array.isArray(lastArr) && lastArr.length > 0 ? lastArr[0] : null
+        if (last && Number(last.ap) === Number(ap) && Number(last.aap) === Number(aap) && Number(last.dp) === Number(dp)) {
+          return NextResponse.json({
+            success: true,
+            message: 'Sem mudanças no gearscore; histórico não atualizado',
+            data: {
+              player_id: playerData.id,
+              gearscore,
+              recorded_at: null,
+              skipped: true
+            }
+          })
+        }
+      }
+
       const { error: historyError } = await supabase
         .from('gearscore_history')
         .insert({

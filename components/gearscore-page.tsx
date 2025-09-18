@@ -68,6 +68,36 @@ interface GearscoreHistory {
   recorded_at: string
 }
 
+interface UploadPreviewItem {
+  user_id: number
+  family_name: string
+  reason?: string
+  ap?: number
+  aap?: number
+  dp?: number
+  gearscore?: number
+  prev_ap?: number
+  prev_aap?: number
+  prev_dp?: number
+  prev_gearscore?: number
+  delta_ap?: number
+  delta_aap?: number
+  delta_dp?: number
+  delta_gearscore?: number
+}
+
+interface UploadPreviewResult {
+  dryRun?: boolean
+  successCount: number
+  skippedCount: number
+  errorCount: number
+  inserted: UploadPreviewItem[]
+  skipped: UploadPreviewItem[]
+  failed?: Array<{ user_id?: number; family_name?: string; reason: string }>
+  errors?: string[]
+  message?: string
+}
+
 export function GearscorePageComponent() {
   const [players, setPlayers] = useState<PlayerGearscore[]>([])
   const [stats, setStats] = useState<GuildStats | null>(null)
@@ -93,6 +123,52 @@ export function GearscorePageComponent() {
   const [isUploading, setIsUploading] = useState(false)
   const [uploadSuccess, setUploadSuccess] = useState(false)
   const [uploadError, setUploadError] = useState<string | null>(null)
+  const [isPreviewing, setIsPreviewing] = useState(false)
+  const [previewResult, setPreviewResult] = useState<UploadPreviewResult | null>(null)
+  const [showPreviewModal, setShowPreviewModal] = useState<null | 'inserted' | 'skipped'>(null)
+
+  // Utilitário: copiar texto para a área de transferência
+  const copyText = async (text: string) => {
+    try {
+      if (navigator?.clipboard?.writeText) {
+        await navigator.clipboard.writeText(text)
+        return true
+      }
+    } catch {
+      // fallback
+    }
+    try {
+      const el = document.createElement('textarea')
+      el.value = text
+      document.body.appendChild(el)
+      el.select()
+      document.execCommand('copy')
+      document.body.removeChild(el)
+      return true
+    } catch {
+      return false
+    }
+  }
+
+  const buildGroupedNickList = (items: UploadPreviewItem[]) => {
+    const map: Record<string, string[]> = {}
+    for (const it of items) {
+      const fam = it.family_name || ''
+      const g = familyToGuild[fam.toLowerCase()] || 'Desconhecida'
+      if (!map[g]) map[g] = []
+      map[g].push(fam)
+    }
+    const guilds = Object.keys(map).sort()
+    const lines: string[] = []
+    for (const g of guilds) {
+      lines.push(`${g} (${map[g].length}):`)
+      for (const name of map[g].sort((a, b) => a.localeCompare(b, 'pt'))) {
+        lines.push(name)
+      }
+      lines.push('')
+    }
+    return lines.join('\n')
+  }
 
   // Busca dados dos players
   const fetchPlayers = async () => {
@@ -131,6 +207,37 @@ export function GearscorePageComponent() {
       setUploadFile(selectedFile)
       setUploadSuccess(false)
       setUploadError(null)
+      setPreviewResult(null)
+    }
+  }
+
+  const handlePreview = async () => {
+    if (!uploadFile) return
+
+    setIsPreviewing(true)
+    setUploadError(null)
+    try {
+      const formData = new FormData()
+      formData.append('file', uploadFile)
+      formData.append('guild', 'lollipop')
+      formData.append('dryRun', '1')
+
+      const response = await fetch('/api/players-gearscore', {
+        method: 'POST',
+        body: formData
+      })
+
+      const data = await response.json()
+      if (data.success) {
+        setPreviewResult(data.data as UploadPreviewResult)
+      } else {
+        setUploadError(data.error || 'Erro ao pré-visualizar upload')
+      }
+    } catch (error) {
+      console.error('Erro na pré-visualização:', error)
+      setUploadError('Erro ao pré-visualizar upload')
+    } finally {
+      setIsPreviewing(false)
     }
   }
 
@@ -155,6 +262,7 @@ export function GearscorePageComponent() {
       if (data.success) {
         setUploadSuccess(true)
         setUploadFile(null)
+        setPreviewResult(null)
         // Recarrega os dados após upload bem-sucedido
         await fetchPlayers()
       } else {
@@ -274,6 +382,28 @@ export function GearscorePageComponent() {
     return new Date(dateString).toLocaleDateString('pt-BR')
   }
 
+  const formatRelativeTime = (dateString: string) => {
+    if (!dateString) return 'N/A'
+    const now = new Date().getTime()
+    const ts = new Date(dateString).getTime()
+    if (isNaN(ts)) return 'N/A'
+    const diffMs = now - ts
+    const sec = Math.floor(diffMs / 1000)
+    if (sec < 60) return 'agora'
+    const min = Math.floor(sec / 60)
+    if (min < 60) return `há ${min} min`
+    const hrs = Math.floor(min / 60)
+    if (hrs < 24) return `há ${hrs} h`
+    const days = Math.floor(hrs / 24)
+    if (days < 7) return `há ${days} dia${days > 1 ? 's' : ''}`
+    const weeks = Math.floor(days / 7)
+    if (weeks < 5) return `há ${weeks} sem`
+    const months = Math.floor(days / 30)
+    if (months < 12) return `há ${months} m`
+    const years = Math.floor(days / 365)
+    return `há ${years} a`
+  }
+
   const getGearscoreColor = (gs: number) => {
     if (gs >= 900) return "text-purple-600 font-bold"
     if (gs >= 850) return "text-red-600 font-semibold"
@@ -377,6 +507,21 @@ export function GearscorePageComponent() {
               placeholder="Selecione um arquivo JSON"
             />
             <Button
+              onClick={handlePreview}
+              disabled={!uploadFile || isPreviewing}
+              variant="outline"
+              className="min-w-[140px]"
+            >
+              {isPreviewing ? (
+                <>
+                  <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                  Pré-visualizando...
+                </>
+              ) : (
+                'Pré-visualizar'
+              )}
+            </Button>
+            <Button
               onClick={handleUpload}
               disabled={!uploadFile || isUploading}
               className="min-w-[120px]"
@@ -384,12 +529,12 @@ export function GearscorePageComponent() {
               {isUploading ? (
                 <>
                   <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
-                  Enviando...
+                  Salvar
                 </>
               ) : (
                 <>
                   <UploadIcon className="h-4 w-4 mr-2" />
-                  Enviar
+                  Salvar
                 </>
               )}
             </Button>
@@ -416,6 +561,165 @@ export function GearscorePageComponent() {
             <div className="flex items-center space-x-2 text-sm text-red-600">
               <AlertCircleIcon className="h-4 w-4" />
               <span>{uploadError}</span>
+            </div>
+          )}
+
+          {previewResult && (
+            <div className="mt-4 p-4 border rounded-md space-y-3">
+              <div className="text-sm text-muted-foreground">
+                Prévia: {previewResult.successCount} inserções, {previewResult.skippedCount} sem mudança, {previewResult.errorCount} erros
+              </div>
+              {previewResult.errors && previewResult.errors.length > 0 && (
+                <div className="text-xs text-red-600">
+                  {previewResult.errors.slice(0, 3).map((e, i) => (<div key={i}>{e}</div>))}
+                  {previewResult.errors.length > 3 && (
+                    <div>… +{previewResult.errors.length - 3} outros</div>
+                  )}
+                </div>
+              )}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <div className="font-medium mb-1">Inseridos (amostra)</div>
+                  <div className="text-sm text-muted-foreground space-y-1">
+                    {previewResult.inserted.slice(0, 10).map(it => (
+                      <div key={it.user_id} className="flex items-center justify-between">
+                        <span>{it.family_name}</span>
+                        <span className="font-mono">
+                          AP {it.ap} / AAP {it.aap} / DP {it.dp} • GS {it.gearscore}
+                          {typeof it.prev_gearscore !== 'undefined' && typeof it.delta_gearscore !== 'undefined' && (
+                            <>
+                              {' '}(
+                              <span className={Number(it.delta_gearscore) > 0 ? 'text-green-600' : Number(it.delta_gearscore) < 0 ? 'text-red-600' : 'text-muted-foreground'}>
+                                {Number(it.delta_gearscore) > 0 ? `+${it.delta_gearscore}` : it.delta_gearscore}
+                              </span>
+                              )
+                            </>
+                          )}
+                        </span>
+                      </div>
+                    ))}
+                    {previewResult.inserted.length === 0 && <div>Nenhum</div>}
+                    {previewResult.inserted.length > 10 && (
+                      <div>… +{previewResult.inserted.length - 10} outros</div>
+                    )}
+                    {previewResult.inserted.length > 0 && (
+                      <div className="flex gap-2">
+                        <Button variant="outline" size="sm" onClick={() => setShowPreviewModal('inserted')}>Ver todos</Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={async () => {
+                            const text = buildGroupedNickList(previewResult.inserted)
+                            await copyText(text)
+                          }}
+                        >
+                          Copiar nicks por guilda
+                        </Button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+                <div>
+                  <div className="font-medium mb-1">Sem mudança (amostra)</div>
+                  <div className="text-sm text-muted-foreground space-y-1">
+                    {previewResult.skipped.slice(0, 10).map(it => (
+                      <div key={it.user_id} className="flex items-center justify-between">
+                        <span>{it.family_name}</span>
+                        <span className="font-mono">AP {it.ap} / AAP {it.aap} / DP {it.dp} • GS {it.gearscore} (0)</span>
+                      </div>
+                    ))}
+                    {previewResult.skipped.length === 0 && <div>Nenhum</div>}
+                    {previewResult.skipped.length > 10 && (
+                      <div>… +{previewResult.skipped.length - 10} outros</div>
+                    )}
+                    {previewResult.skipped.length > 0 && (
+                      <div className="flex gap-2">
+                        <Button variant="outline" size="sm" onClick={() => setShowPreviewModal('skipped')}>Ver todos</Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={async () => {
+                            const text = buildGroupedNickList(previewResult.skipped)
+                            await copyText(text)
+                          }}
+                        >
+                          Copiar nicks por guilda
+                        </Button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {(() => {
+                const totalPlayers = stats?.total_players || players.length || 0
+                const sumDelta = (previewResult.inserted || []).reduce((acc, it) => acc + (Number(it.delta_gearscore) || 0), 0)
+                const avgImpact = totalPlayers > 0 ? Math.round(sumDelta / totalPlayers) : 0
+                const newAvg = stats?.average_gearscore != null ? stats.average_gearscore + avgImpact : null
+                return (
+                  <div className="mt-2 p-3 rounded-md border bg-muted/30 space-y-1">
+                    <div className="text-sm">
+                      Evolução total de GS (somatório): <span className={sumDelta > 0 ? 'text-green-600 font-semibold' : sumDelta < 0 ? 'text-red-600 font-semibold' : 'text-muted-foreground'}>{sumDelta > 0 ? `+${sumDelta}` : sumDelta}</span>
+                    </div>
+                    <div className="text-sm">
+                      Impacto estimado no GS médio da guilda: <span className={avgImpact > 0 ? 'text-green-600 font-semibold' : avgImpact < 0 ? 'text-red-600 font-semibold' : 'text-muted-foreground'}>{avgImpact > 0 ? `+${avgImpact}` : avgImpact}</span>
+                    </div>
+                    {newAvg != null && (
+                      <div className="text-sm">
+                        Novo GS médio estimado: <span className="font-semibold">{newAvg}</span>
+                      </div>
+                    )}
+                    {(() => {
+                      // Impacto por guilda (Allyance e Grand_Order)
+                      const targets = ['Allyance','Grand_Order'] as const
+                      const deltaByGuild: Record<string, number> = {}
+                      for (const it of (previewResult.inserted || [])) {
+                        const fam = (it.family_name || '').toLowerCase()
+                        const g = familyToGuild[fam]
+                        if (!g) continue
+                        const d = Number(it.delta_gearscore)
+                        if (!isNaN(d)) deltaByGuild[g] = (deltaByGuild[g] || 0) + d
+                      }
+                      return (
+                        <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-2">
+                          {targets.map((g) => {
+                            const playersCount = guildAverages[g]?.totalPlayers || 0
+                            const baseAvg = guildAverages[g]?.averageGS || 0
+                            const delta = deltaByGuild[g] || 0
+                            const impact = playersCount > 0 ? Math.round(delta / playersCount) : 0
+                            const newAvgGuild = baseAvg + impact
+                            return (
+                              <div key={g} className="text-sm p-2 border rounded">
+                                <div className="font-medium">{g}</div>
+                                <div>
+                                  Impacto estimado: <span className={impact > 0 ? 'text-green-600 font-semibold' : impact < 0 ? 'text-red-600 font-semibold' : 'text-muted-foreground'}>{impact > 0 ? `+${impact}` : impact}</span>
+                                </div>
+                                <div>
+                                  Novo GS médio estimado: <span className="font-semibold">{newAvgGuild}</span>
+                                </div>
+                              </div>
+                            )
+                          })}
+                        </div>
+                      )
+                    })()}
+                  </div>
+                )
+              })()}
+
+              {previewResult.failed && previewResult.failed.length > 0 && (
+                <div className="mt-4">
+                  <div className="font-medium mb-1">Erros (amostra)</div>
+                  <div className="text-xs text-red-600 space-y-1">
+                    {previewResult.failed.slice(0, 10).map((f, i) => (
+                      <div key={`${f.user_id}-${i}`}>{f.family_name || '—'}: {f.reason}</div>
+                    ))}
+                    {previewResult.failed.length > 10 && (
+                      <div>… +{previewResult.failed.length - 10} outros</div>
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </CardContent>
@@ -482,7 +786,14 @@ export function GearscorePageComponent() {
                     </CardHeader>
                     <CardContent>
                       <div className="text-sm text-muted-foreground">
-                        {players[0] ? formatDate(players[0].last_updated) : 'N/A'}
+                        {(() => {
+                          if (players.length === 0) return 'N/A'
+                          const latest = players.reduce((max, p) => {
+                            const t = new Date(p.last_updated).getTime()
+                            return isNaN(t) ? max : Math.max(max, t)
+                          }, 0)
+                          return latest ? formatRelativeTime(new Date(latest).toISOString()) : 'N/A'
+                        })()}
                       </div>
                     </CardContent>
                   </Card>
@@ -817,7 +1128,7 @@ export function GearscorePageComponent() {
                               {player.gearscore}
                             </TableCell>
                             <TableCell className="text-center text-sm text-muted-foreground">
-                              {formatDate(player.last_updated)}
+                              {formatRelativeTime(player.last_updated)}
                             </TableCell>
                             <TableCell className="text-center">
                               <Button
@@ -916,6 +1227,92 @@ export function GearscorePageComponent() {
                 </div>
               )}
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Prévia Detalhada */}
+      {previewResult && showPreviewModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+          <div className="bg-background rounded-lg p-6 max-w-4xl w-full max-h-[80vh] overflow-y-auto">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold">
+                {showPreviewModal === 'inserted' ? 'Jogadores a serem inseridos' : 'Jogadores sem mudança'}
+              </h3>
+              <Button variant="ghost" size="sm" onClick={() => setShowPreviewModal(null)}>✕</Button>
+            </div>
+
+            {(() => {
+              const list = (showPreviewModal === 'inserted' ? previewResult.inserted : previewResult.skipped) || []
+              // Agrupa por guilda usando mapa familyToGuild
+              const map: Record<string, UploadPreviewItem[]> = {}
+              for (const it of list) {
+                const g = familyToGuild[(it.family_name || '').toLowerCase()] || 'Desconhecida'
+                if (!map[g]) map[g] = []
+                map[g].push(it)
+              }
+              const guilds = Object.keys(map).sort()
+              return (
+                <div className="space-y-4">
+                  <div className="flex items-center justify-end">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={async () => {
+                        const allItems = guilds.flatMap(g => map[g])
+                        const text = buildGroupedNickList(allItems)
+                        await copyText(text)
+                      }}
+                    >
+                      Copiar nicks por guilda
+                    </Button>
+                  </div>
+                  {guilds.map(g => (
+                    <div key={g} className="border rounded-md">
+                      <div className="px-3 py-2 border-b flex items-center justify-between">
+                        <div className="font-medium flex items-center gap-2">
+                          <span>{g}</span>
+                          <Badge variant="outline" className={getGuildBadgeClass(g)}>{map[g].length}</Badge>
+                        </div>
+                        {(() => {
+                          const sumDelta = map[g].reduce((acc, it) => acc + (Number(it.delta_gearscore) || 0), 0)
+                          return (
+                            <div className="text-xs text-muted-foreground">
+                              Evolução GS: <span className={sumDelta > 0 ? 'text-green-600 font-semibold' : sumDelta < 0 ? 'text-red-600 font-semibold' : ''}>{sumDelta > 0 ? `+${sumDelta}` : sumDelta}</span>
+                            </div>
+                          )
+                        })()}
+                      </div>
+                      <div className="divide-y">
+                        {map[g]
+                          .slice()
+                          .sort((a, b) => (a.family_name || '').localeCompare(b.family_name || '', 'pt'))
+                          .map((it, idx) => (
+                          <div key={`${g}-${idx}`} className="px-3 py-2 text-sm flex items-center justify-between">
+                            <div className="min-w-0">
+                              <div className="font-medium truncate">{it.family_name}</div>
+                            </div>
+                            <div className="flex items-center gap-3 font-mono">
+                              <span>AP {it.ap}</span>
+                              <span>AAP {it.aap}</span>
+                              <span>DP {it.dp}</span>
+                              <span>
+                                GS {it.gearscore}
+                                {typeof it.delta_gearscore !== 'undefined' && (
+                                  <span className={`ml-1 ${Number(it.delta_gearscore) > 0 ? 'text-green-600' : Number(it.delta_gearscore) < 0 ? 'text-red-600' : 'text-muted-foreground'}`}>
+                                    {Number(it.delta_gearscore) > 0 ? `(+${it.delta_gearscore})` : `(0)`}
+                                  </span>
+                                )}
+                              </span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )
+            })()}
           </div>
         </div>
       )}
