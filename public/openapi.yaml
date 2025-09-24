@@ -1,0 +1,554 @@
+openapi: 3.1.0
+info:
+  title: Ikusa App API
+  version: "1.0.0"
+  description: |
+    API do Ikusa App para processamento de logs, estatísticas K/D, cache de aliança e gearscore.
+servers:
+  - url: /
+paths:
+  /api/setup:
+    post:
+      summary: Inicializa/atualiza o schema no Supabase (tabelas, RLS e índices)
+      tags: [Setup]
+      responses:
+        '200': { description: OK }
+        '500': { description: Erro interno }
+
+  /api/process-log:
+    post:
+      summary: Processa um arquivo .log e retorna estatísticas consolidadas
+      tags: [Logs]
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file:
+                  type: string
+                  format: binary
+                  description: Arquivo .log de combate
+                territorio:
+                  type: string
+                  enum: [Calpheon, Kamasylvia, Siege]
+                node:
+                  type: string
+                slowMode:
+                  type: string
+                  description: Use '1'/'true'/'on' para reduzir concorrência
+      responses:
+        '200':
+          description: Estatísticas do log em JSON
+          content:
+            application/json:
+              examples:
+                demo:
+                  $ref: '#/components/examples/ProcessLogMinimal'
+        '400': { description: Requisição inválida }
+        '500': { description: Erro interno }
+
+  /api/process-logs:
+    get:
+      summary: Lista logs processados (opcionalmente por mês)
+      tags: [Logs]
+      parameters:
+        - in: query
+          name: month
+          schema: { type: string, pattern: "^\\d{4}-\\d{2}$" }
+          description: Mês no formato YYYY-MM
+      responses:
+        '200':
+          description: Lista de logs
+          content:
+            application/json:
+              examples:
+                demo:
+                  summary: Exemplo com dois logs
+                  value:
+                    success: true
+                    count: 2
+                    logs:
+                      - id: "83c8a4f2-2a66-4b24-bd0e-2f9f7a9a1111"
+                        created_at: "2025-09-20T23:12:00Z"
+                        arquivo_nome: "nodewar_2025-09-20.log"
+                        guild: "Lollipop"
+                        guilds: ["Lollipop","Chernobyl","Manifest"]
+                        total_geral: 84
+                        has_player_stats: true
+                        has_classes_by_guild: true
+                      - id: "a2a4f2c8-6a22-44b2-8dbd-9a2ff7a9a222"
+                        created_at: "2025-09-18T23:05:00Z"
+                        arquivo_nome: "nodewar_2025-09-18.log"
+                        guild: "Lollipop"
+                        guilds: ["Lollipop","Chernobyl"]
+                        total_geral: 72
+                        has_player_stats: true
+                        has_classes_by_guild: true
+        '500': { description: Erro interno }
+    delete:
+      summary: Remove o último log inserido
+      tags: [Logs]
+      responses:
+        '200': { description: Log removido }
+        '404': { description: Nenhum log encontrado }
+        '500': { description: Erro interno }
+
+  /api/process-monthly-kda:
+    get:
+      summary: Retorna estatísticas mensais por jogador (aliança)
+      tags: [KDA]
+      parameters:
+        - in: query
+          name: month
+          schema: { type: string, pattern: "^\\d{4}-\\d{2}$" }
+        - in: query
+          name: nodes_only
+          schema: { type: string, enum: ["true","false"] }
+      responses:
+        '200':
+          description: Estatísticas mensais
+          content:
+            application/json:
+              examples:
+                demo:
+                  summary: KDA mensal (nódes apenas)
+                  value:
+                    success: true
+                    month_year: "2025-09"
+                    total_players: 3
+                    total_logs_processed: 2
+                    players:
+                      - player_nick: "Aresx"
+                        player_familia: "aresfamily"
+                        guilda: "Manifest"
+                        total_kills: 20
+                        total_deaths: 10
+                        kd_overall: 2
+                        classes_played:
+                          - classe: "warrior"
+                            kills: 12
+                            deaths: 6
+                            last_played: "2025-09-20T23:12:00Z"
+                      - player_nick: "Lyra"
+                        player_familia: "lyrafam"
+                        guilda: "Allyance"
+                        total_kills: 14
+                        total_deaths: 7
+                        kd_overall: 2
+                        classes_played:
+                          - classe: "ranger"
+                            kills: 9
+                            deaths: 4
+                            last_played: "2025-09-20T23:12:00Z"
+        '500': { description: Erro interno }
+    post:
+      summary: Processa e persiste estatísticas mensais
+      tags: [KDA]
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                forceReprocess: { type: boolean }
+                monthYear: { type: string }
+                cleanInactivePlayers: { type: boolean }
+                refreshAllianceCache: { type: boolean }
+      responses:
+        '200': { description: Resultado do processamento }
+        '500': { description: Erro interno }
+
+  /api/kda-filters:
+    get:
+      summary: Calcula K/D a partir de um combatLog via query string
+      tags: [KDA]
+      parameters:
+        - in: query
+          name: combatLog
+          required: true
+          schema: { type: string }
+        - in: query
+          name: minKills
+          schema: { type: integer }
+        - in: query
+          name: minKdOverall
+          schema: { type: number }
+        - in: query
+          name: minKdVsChernobyl
+          schema: { type: number }
+        - in: query
+          name: minKdVsOthers
+          schema: { type: number }
+        - in: query
+          name: guilda
+          schema: { type: string }
+      responses:
+        '200': { description: Lista ordenada por K/D }
+        '400': { description: Requisição inválida }
+        '500': { description: Erro interno }
+    post:
+      summary: Calcula K/D a partir de um combatLog via JSON
+      tags: [KDA]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                combatLog: { type: string }
+                filters: { type: object }
+      responses:
+        '200': { description: Lista ordenada por K/D }
+        '400': { description: Requisição inválida }
+        '500': { description: Erro interno }
+
+  /api/alliance-cache:
+    get:
+      summary: Retorna o cache atual de membros da aliança
+      tags: [Alliance]
+      responses:
+        '200':
+          description: Cache e metadados
+          content:
+            application/json:
+              examples:
+                demo:
+                  summary: Membros da aliança
+                  value:
+                    success: true
+                    total: 2
+                    lastUpdate: "2025-09-21T00:00:00Z"
+                    guilds: ["Manifest","Allyance","Grand_Order"]
+                    members:
+                      - familia: "aresfamily"
+                        guilda: "Manifest"
+                        isMestre: false
+                        lastSeen: "2025-09-21T00:00:00Z"
+                      - familia: "lyrafam"
+                        guilda: "Allyance"
+                        isMestre: false
+                        lastSeen: "2025-09-20T22:10:00Z"
+        '500': { description: Erro interno }
+    post:
+      summary: Força atualização do cache (raspagem)
+      tags: [Alliance]
+      responses:
+        '200': { description: Cache atualizado }
+        '500': { description: Erro interno }
+
+  /api/family-tracking:
+    get:
+      summary: Retorna classes por família
+      tags: [Families]
+      parameters:
+        - in: query
+          name: familias
+          required: true
+          schema: { type: string }
+          description: Lista de famílias separadas por vírgula
+      responses:
+        '200': { description: Dados por família }
+        '400': { description: Requisição inválida }
+        '500': { description: Erro interno }
+    post:
+      summary: Processa em lote famílias
+      tags: [Families]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                familias:
+                  type: array
+                  items: { type: string }
+      responses:
+        '200': { description: Dados por família }
+        '400': { description: Requisição inválida }
+        '500': { description: Erro interno }
+
+  /api/debug-env:
+    get:
+      summary: Exibe status das variáveis de ambiente e conexão Supabase
+      tags: [Debug]
+      responses:
+        '200': { description: Status }
+        '500': { description: Erro interno }
+
+  /api/node-gearscore:
+    get:
+      summary: Estatísticas de gearscore por node
+      tags: [Gearscore]
+      parameters:
+        - in: query
+          name: node
+          required: true
+          schema: { type: string }
+        - in: query
+          name: date
+          schema: { type: string, format: date-time }
+        - in: query
+          name: guild
+          schema: { type: string, default: lollipop }
+      responses:
+        '200': { description: Estatísticas de GS }
+        '404': { description: Node não encontrada }
+        '500': { description: Erro interno }
+
+  /api/players-gearscore:
+    get:
+      summary: Lista players com gearscore e estatísticas agregadas
+      tags: [Gearscore]
+      parameters:
+        - { in: query, name: guild, schema: { type: string, default: lollipop } }
+        - { in: query, name: limit, schema: { type: integer } }
+        - { in: query, name: sortBy, schema: { type: string } }
+        - { in: query, name: order, schema: { type: string, enum: [asc, desc] } }
+        - { in: query, name: history, schema: { type: string, enum: ["true","false"] } }
+        - { in: query, name: userId, schema: { type: string } }
+        - { in: query, name: asOf, schema: { type: string, format: date-time } }
+        - { in: query, name: closest, schema: { type: string, enum: ["1","0"] } }
+        - { in: query, name: windowDays, schema: { type: integer } }
+        - { in: query, name: skipAllianceFilter, schema: { type: string, enum: ["1","0"] } }
+      responses:
+        '200':
+          description: Lista filtrada
+          content:
+            application/json:
+              examples:
+                demo:
+                  summary: Top players e estatísticas
+                  value:
+                    success: true
+                    data:
+                      players:
+                        - user_id: "1001"
+                          family_name: "aresfamily"
+                          character_name: "Aresx"
+                          main_class: "Warrior"
+                          ap: 301
+                          aap: 298
+                          dp: 397
+                          gearscore: 698
+                          last_updated: "2025-09-21T00:00:00Z"
+                      stats:
+                        total_players: 1
+                        average_gearscore: 698
+                        class_distribution: { Warrior: 1 }
+                        gearscore_ranges: { 751-800: 0, 801-850: 0, 851-900: 0 }
+        '500': { description: Erro interno }
+    post:
+      summary: Atualiza dados via JSON individual ou upload em lote (multipart)
+      tags: [Gearscore]
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file: { type: string, format: binary }
+                guild: { type: string }
+                dryRun: { type: string, enum: ["1","true"] }
+          application/json:
+            schema:
+              type: object
+              properties:
+                user_id: { type: integer }
+                family_name: { type: string }
+                character_name: { type: string }
+                main_class: { type: string }
+                ap: { type: number }
+                aap: { type: number }
+                dp: { type: number }
+                link_gear: { type: string }
+      responses:
+        '200': { description: Operação bem-sucedida }
+        '400': { description: Requisição inválida }
+        '500': { description: Erro interno }
+tags:
+  - name: Setup
+    description: Inicialização e configuração do banco
+  - name: Logs
+    description: Processamento de logs e listagem
+  - name: KDA
+    description: Estatísticas de K/D e agregações mensais
+  - name: Alliance
+    description: Cache e dados da aliança
+  - name: Families
+    description: Rastreamento de famílias e personagens
+  - name: Gearscore
+    description: Dados e estatísticas de gearscore
+  - name: Debug
+    description: Diagnóstico do ambiente
+
+components:
+  schemas:
+    ErrorResponse:
+      type: object
+      properties:
+        success: { type: boolean, example: false }
+        error: { type: string }
+        message: { type: string }
+    ProcessLogResponse:
+      type: object
+      properties:
+        guild: { type: string, example: Lollipop }
+        guilds:
+          type: array
+          items: { type: string }
+        totalGeral: { type: integer, example: 87 }
+        totalPorClasse:
+          type: array
+          items:
+            type: object
+            properties:
+              classe: { type: string, example: warrior }
+              count: { type: integer, example: 10 }
+        classes:
+          type: object
+          additionalProperties:
+            type: array
+            items:
+              type: object
+              properties:
+                nick: { type: string }
+                familia: { type: string }
+        classesByGuild:
+          type: object
+        killsByGuild:
+          type: object
+          additionalProperties: { type: integer }
+        deathsByGuild:
+          type: object
+          additionalProperties: { type: integer }
+        kdRatioByGuild:
+          type: object
+          additionalProperties: { type: number }
+        killsMatrix:
+          type: object
+        territorio: { type: string }
+        node: { type: string }
+        guildasAdversarias:
+          type: array
+          items: { type: string }
+        playerStatsByGuild:
+          type: object
+    ProcessLogsListItem:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        created_at: { type: string, format: date-time }
+        arquivo_nome: { type: string }
+        guild: { type: string }
+        guilds: { type: array, items: { type: string } }
+        total_geral: { type: integer }
+        has_player_stats: { type: boolean }
+        has_classes_by_guild: { type: boolean }
+    MonthlyKDAPlayer:
+      type: object
+      properties:
+        player_nick: { type: string }
+        player_familia: { type: string }
+        guilda: { type: string, example: Manifest }
+        classes_played:
+          type: array
+          items:
+            type: object
+            properties:
+              classe: { type: string }
+              kills: { type: integer }
+              deaths: { type: integer }
+              kills_vs_chernobyl: { type: integer }
+              deaths_vs_chernobyl: { type: integer }
+              kills_vs_others: { type: integer }
+              deaths_vs_others: { type: integer }
+              last_played: { type: string, format: date-time }
+        total_kills: { type: integer }
+        total_deaths: { type: integer }
+        kd_overall: { type: number }
+    AllianceMember:
+      type: object
+      properties:
+        familia: { type: string }
+        guilda: { type: string }
+        isMestre: { type: boolean }
+        lastSeen: { type: string, format: date-time }
+    NodeGearscoreStats:
+      type: object
+      properties:
+        node_name: { type: string }
+        event_date: { type: string, format: date-time }
+        total_participants: { type: integer }
+        average_gearscore: { type: integer }
+        gearscore_distribution:
+          type: object
+          properties:
+            751-800: { type: integer }
+            801-850: { type: integer }
+            851-900: { type: integer }
+        participants_with_gearscore:
+          type: array
+          items:
+            type: object
+            properties:
+              family_name: { type: string }
+              character_name: { type: string }
+              main_class: { type: string }
+              gearscore: { type: integer }
+              ap: { type: integer }
+              aap: { type: integer }
+              dp: { type: integer }
+        participants_without_gearscore:
+          type: array
+          items: { type: string }
+    PlayerGearscoreItem:
+      type: object
+      properties:
+        user_id: { type: string }
+        family_name: { type: string }
+        character_name: { type: string }
+        main_class: { type: string }
+        ap: { type: integer }
+        aap: { type: integer }
+        dp: { type: integer }
+        gearscore: { type: integer }
+        last_updated: { type: string, format: date-time }
+    GuildStats:
+      type: object
+      properties:
+        total_players: { type: integer }
+        average_gearscore: { type: integer }
+        class_distribution:
+          type: object
+          additionalProperties: { type: integer }
+        gearscore_ranges:
+          type: object
+          properties:
+            751-800: { type: integer }
+            801-850: { type: integer }
+            851-900: { type: integer }
+    PlayersGearscoreResponse:
+      type: object
+      properties:
+        players:
+          type: array
+          items: { $ref: '#/components/schemas/PlayerGearscoreItem' }
+        stats: { $ref: '#/components/schemas/GuildStats' }
+  examples:
+    ProcessLogMinimal:
+      summary: Resposta resumida do process-log
+      value:
+        guild: Lollipop
+        guilds: [Lollipop, Chernobyl]
+        totalGeral: 87
+        totalPorClasse: [{ classe: warrior, count: 10 }]
+        territorio: Calpheon
+        node: Node War 09/2025
+
+

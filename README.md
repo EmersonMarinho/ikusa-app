@@ -40,6 +40,15 @@ Uma aplicação web moderna para processar, analisar e comparar logs de guerra d
 - **Parser**: Axios + Cheerio para busca de dados do jogo
 - **Deploy**: Vercel
 
+## 📚 Documentação
+
+- Visão Geral: `docs/overview.md`
+- API: `docs/api.md`
+- Desenvolvimento: `docs/dev.md`
+- Deploy: `docs/deploy.md`
+- Segurança: `docs/seguranca.md`
+ - Swagger UI: acesse `/api-docs` (usa `public/openapi.yaml`)
+
 ## 🚀 **Como Executar**
 
 ### 1. **Instalação**
