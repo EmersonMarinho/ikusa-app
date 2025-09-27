@@ -92,7 +92,7 @@ export async function DELETE(_request: NextRequest) {
 export async function PATCH(request: NextRequest) {
   try {
     const body = await request.json()
-    const { id, total_node_seconds, lollipop_occupancy_seconds } = body || {}
+    const { id, total_node_seconds, lollipop_occupancy_seconds, is_win, win_reason } = body || {}
 
     if (!id) {
       return NextResponse.json({ success: false, message: 'Campo id é obrigatório' }, { status: 400 })
@@ -101,12 +101,13 @@ export async function PATCH(request: NextRequest) {
     const payload: Record<string, any> = {}
     if (typeof total_node_seconds === 'number') payload.total_node_seconds = Math.max(0, Math.floor(total_node_seconds))
     if (typeof lollipop_occupancy_seconds === 'number') payload.lollipop_occupancy_seconds = Math.max(0, Math.floor(lollipop_occupancy_seconds))
+    if (typeof is_win === 'boolean') payload.is_win = is_win
+    if (typeof win_reason === 'string') payload.win_reason = win_reason || null
 
     if (Object.keys(payload).length === 0) {
       return NextResponse.json({ success: false, message: 'Nenhum campo válido para atualizar' }, { status: 400 })
     }
 
-    // Usa service role key se disponível para bypass de RLS no servidor
     const adminUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
     const adminKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
     const adminClient = createClient(adminUrl, adminKey)

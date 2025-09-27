@@ -33,6 +33,9 @@ export interface ProcessedLog {
   // Tempo de node e ocupação (segundos)
   totalNodeSeconds?: number
   lollipopOccupancySeconds?: number
+  // Vitória/Derrota
+  isWin?: boolean
+  winReason?: string
 }
 
 export interface HistoryRecord {
@@ -183,6 +186,8 @@ async function processLogFileMock(file: File, territorio: 'Calpheon' | 'Kamasylv
     node,
     guildasAdversarias,
     detectedGuilds: guilds, // No mock, usamos as guildas selecionadas
+    isWin: false,
+    winReason: undefined,
   }
 }
 
@@ -209,6 +214,8 @@ export async function saveToDatabase(data: ProcessedLog & { event_date?: string 
       event_date: data.event_date || null,
       total_node_seconds: data.totalNodeSeconds ?? null,
       lollipop_occupancy_seconds: data.lollipopOccupancySeconds ?? null,
+      is_win: data.isWin ?? null,
+      win_reason: data.winReason ?? null,
     }
 
     console.log('[Salvar] Enviando para process_logs:', recordData)

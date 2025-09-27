@@ -1696,6 +1696,8 @@ export function HistoryPage() {
                 })()
                 
                 const headerDate = eventDateIso ? formatRelativeDay(eventDateIso) : ''
+                const isWin = !!(record?.is_win ?? record?.isWin ?? false)
+                const winReason = record?.win_reason ?? record?.winReason ?? ''
 
                 return (
                   <div className="space-y-6">
@@ -1729,6 +1731,17 @@ export function HistoryPage() {
                       </TabsList>
 
                       <TabsContent value="resumo" className="space-y-6 mt-4">
+                        <div className="flex flex-wrap gap-2">
+                          <span className={`inline-flex items-center gap-2 text-xs px-3 py-1.5 rounded-full border shadow-sm ${isWin ? 'bg-green-500/15 text-green-200 border-green-500/30' : 'bg-red-500/15 text-red-200 border-red-500/30'}`}>
+                            <span className="flex items-center gap-1 font-semibold uppercase tracking-wide">
+                              <span className={`h-2 w-2 rounded-full ${isWin ? 'bg-green-400' : 'bg-red-400'}`}></span>
+                              {isWin ? 'Vitória' : 'Derrota'}
+                            </span>
+                            {winReason && (
+                              <span className="text-neutral-400 italic">— {winReason}</span>
+                            )}
+                          </span>
+                        </div>
                         {/* Informações da Guerra */}
                         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                           {processedData.territorio && (
@@ -2610,13 +2623,15 @@ export function HistoryPage() {
                             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                               <Card className="bg-neutral-800 border-neutral-700">
                                 <CardHeader className="pb-2">
-                                  <CardTitle className="text-sm font-medium text-neutral-300">% de pino (Lollipop)</CardTitle>
+                                  <CardTitle className="text-sm font-medium text-neutral-300">Média de ocupação Lollipop</CardTitle>
                                 </CardHeader>
-                                <CardContent>
-                                  <div className="text-3xl font-bold text-neutral-100">{pctL}%</div>
-                                  <p className="text-xs text-neutral-400 mt-1">{formatSecondsToMMSS(lolli)} de {formatSecondsToMMSS(total)}</p>
+                                <CardContent className="space-y-3">
+                                  <div>
+                                    <div className="text-3xl font-bold text-neutral-100">{pctL}%</div>
+                                    <p className="text-xs text-neutral-400 mt-1">{formatSecondsToMMSS(lolli)} de {formatSecondsToMMSS(total)}</p>
+                                  </div>
                                   {othersGuilds.length > 0 && (
-                                    <div className="mt-3">
+                                    <div>
                                       <div className="text-xs text-neutral-400 mb-1">Outras guildas no dia</div>
                                       <div className="flex flex-wrap gap-2">
                                         {othersGuilds.map((g) => (

@@ -38,6 +38,9 @@ export interface ProcessLogRecord {
   // Tempos (segundos)
   total_node_seconds?: number | null
   lollipop_occupancy_seconds?: number | null
+  // Vitória/Derrota
+  is_win?: boolean | null
+  win_reason?: string | null
 }
 
 // Função para inserir log processado

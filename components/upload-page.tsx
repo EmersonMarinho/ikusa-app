@@ -26,6 +26,7 @@ import {
   AlertCircleIcon,
   CheckCircleIcon,
 } from "lucide-react"
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 
 export function UploadPage() {
   const [file, setFile] = useState<File | null>(null)
@@ -46,6 +47,8 @@ export function UploadPage() {
   // Tempos (edição no formato mm:ss)
   const [totalNodeMMSS, setTotalNodeMMSS] = useState<string>("")
   const [lollipopMMSS, setLollipopMMSS] = useState<string>("")
+  const [isWin, setIsWin] = useState<boolean>(false)
+  const [winReason, setWinReason] = useState<string>("")
 
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFile = event.target.files?.[0]
@@ -69,6 +72,8 @@ export function UploadPage() {
       formData.append('territorio', territorio)
       formData.append('node', node)
       if (slowMode) formData.append('slowMode', '1')
+      if (isWin) formData.append('isWin', '1')
+      if (winReason.trim()) formData.append('winReason', winReason.trim())
 
       const response = await fetch('/api/process-log', {
         method: 'POST',
@@ -98,6 +103,8 @@ export function UploadPage() {
             if (tn != null) overrides.totalNodeSeconds = tn
             if (lo != null) overrides.lollipopOccupancySeconds = lo
           }
+          overrides.isWin = isWin
+          overrides.winReason = winReason.trim() || undefined
           await saveToDatabase({ ...data, ...overrides, event_date: eventDate ? new Date(eventDate).toISOString() : undefined } as any, file.name)
           setSaveSuccess(true)
           setSaveError(null)
@@ -331,7 +338,36 @@ export function UploadPage() {
           </div>
           )}
 
-          <div className="space-y-2">
+          <div className="space-y-4">
+            <div className="flex items-center space-x-2">
+              <Checkbox
+                id="is-win"
+                checked={isWin}
+                onCheckedChange={(checked) => setIsWin(!!checked)}
+                className="data-[state=checked]:bg-green-600 data-[state=checked]:border-green-600"
+              />
+              <label htmlFor="is-win" className="text-sm text-neutral-200">
+                Vitória da Lollipop nesta node
+              </label>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span className="text-neutral-500 text-[10px] border border-neutral-600 rounded px-1 py-0.5 cursor-help">?</span>
+                </TooltipTrigger>
+                <TooltipContent sideOffset={6} className="bg-neutral-800 text-neutral-100">Marque quando a Lollipop venceu a node; esse dado alimenta o winrate semanal.</TooltipContent>
+              </Tooltip>
+            </div>
+            {isWin && (
+              <div className="space-y-2">
+                <Label htmlFor="win-reason">Observações da vitória (opcional)</Label>
+                <Input
+                  id="win-reason"
+                  placeholder="Ex: Dominamos base, adversários se renderam..."
+                  value={winReason}
+                  onChange={(e) => setWinReason(e.target.value)}
+                  className="bg-neutral-800 border-neutral-700"
+                />
+              </div>
+            )}
             <Label>Salvamento Automático</Label>
             <div className="flex items-center space-x-2">
               <Checkbox

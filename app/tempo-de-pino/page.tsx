@@ -17,12 +17,14 @@ function TimeEditorCard({
   onInvalid,
   ignored,
   onToggleIgnored,
+  onToggleWin,
 }: {
   log: any
   onSave: (id: string, totalSec: number, lolliSec: number) => Promise<boolean>
   onInvalid: (msg: string) => void
   ignored: boolean
   onToggleIgnored: (id: string) => void
+  onToggleWin: (id: string, win: boolean) => Promise<void>
 }) {
   const totalSec = Number((log as any).total_node_seconds || 0)
   const lolliSec = Number((log as any).lollipop_occupancy_seconds || 0)
@@ -30,6 +32,9 @@ function TimeEditorCard({
   const [lm, setLm] = useState<string>(formatSecondsToMMSS(lolliSec))
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
+  const [winSaving, setWinSaving] = useState(false)
+  const win = !!(log.is_win ?? log.isWin ?? false)
+  const winObs = (log.win_reason ?? log.winReason ?? '') as string
 
   return (
     <Card key={log.id} className={`relative border-neutral-800 bg-neutral-900`}>
@@ -39,7 +44,26 @@ function TimeEditorCard({
         </div>
       )}
       <CardHeader>
-        <CardTitle className="text-neutral-100">{log.node || 'Node sem nome'} — {new Date(log.created_at).toLocaleString('pt-BR')}</CardTitle>
+        <CardTitle className="text-neutral-100 flex items-center justify-between">
+          <span>{log.node || 'Node sem nome'} — {new Date(log.created_at).toLocaleString('pt-BR')}</span>
+          <div className="flex items-center gap-2">
+            {winObs && <span className="text-xs text-neutral-400 italic max-w-[220px] truncate" title={winObs}>"{winObs}"</span>}
+            <button
+              className={`inline-flex items-center gap-2 text-xs px-2 py-1 rounded border ${win ? 'border-green-600 text-green-400' : 'border-red-600 text-red-400'}`}
+              disabled={winSaving}
+              onClick={async()=>{
+                try {
+                  setWinSaving(true)
+                  await onToggleWin(log.id, !win)
+                } finally {
+                  setWinSaving(false)
+                }
+              }}
+            >
+              {winSaving ? 'Salvando...' : win ? 'Vitória' : 'Derrota'}
+            </button>
+          </div>
+        </CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -97,6 +121,7 @@ export default function TempoDePinoPage() {
   const [logs, setLogs] = useState<any[]>([])
   const [filter, setFilter] = useState("")
   const [ignoredIds, setIgnoredIds] = useState<Set<string>>(new Set())
+  const [showLogs, setShowLogs] = useState<boolean>(false)
   // Controles de visualização da tabela semanal
   const [weekFilter, setWeekFilter] = useState<'all' | 'com' | 'sem'>('all')
 
@@ -216,6 +241,12 @@ export default function TempoDePinoPage() {
         count_total: b.items.length,
         count_com: b.withChern.length,
         count_sem: b.withoutChern.length,
+        wins: b.items.filter(l => !!(l.isWin ?? l.is_win ?? false)).length,
+        losses: b.items.filter(l => !(l.isWin ?? l.is_win ?? false)).length,
+        withChernWins: b.withChern.filter(l => !!(l.isWin ?? l.is_win ?? false)).length,
+        withChernLosses: b.withChern.filter(l => !(l.isWin ?? l.is_win ?? false)).length,
+        withoutChernWins: b.withoutChern.filter(l => !!(l.isWin ?? l.is_win ?? false)).length,
+        withoutChernLosses: b.withoutChern.filter(l => !(l.isWin ?? l.is_win ?? false)).length,
       }))
 
     return {
@@ -240,6 +271,15 @@ export default function TempoDePinoPage() {
     const totalCount = denomAll
     const withChernCount = denomCom
     const withoutChernCount = denomSem
+    const chWins = weekly.data.reduce((s, w) => s + (w.withChernWins || 0), 0)
+    const chLosses = weekly.data.reduce((s, w) => s + (w.withChernLosses || 0), 0)
+    const noChWins = weekly.data.reduce((s, w) => s + (w.withoutChernWins || 0), 0)
+    const noChLosses = weekly.data.reduce((s, w) => s + (w.withoutChernLosses || 0), 0)
+    const totalWins = weekly.data.reduce((s, w) => s + (w.wins || 0), 0)
+    const totalLosses = weekly.data.reduce((s, w) => s + (w.losses || 0), 0)
+    const overallWinrate = denomAll ? Math.round((totalWins/denomAll)*1000)/10 : 0
+    const withChernWinrate = denomCom ? Math.round((chWins / denomCom) * 1000) / 10 : 0
+    const withoutChernWinrate = denomSem ? Math.round((noChWins / denomSem) * 1000) / 10 : 0
 
     return {
       allPct,
@@ -248,6 +288,11 @@ export default function TempoDePinoPage() {
       totalCount,
       withChernCount,
       withoutChernCount,
+      totalWins,
+      totalLosses,
+      overallWinrate,
+      withChernWinrate,
+      withoutChernWinrate,
       chartDataPct: [
         { label: 'Geral', valuePct: allPct },
         { label: 'Com Chernobyl', valuePct: chPct },
@@ -280,19 +325,26 @@ export default function TempoDePinoPage() {
       const denom = base.reduce((s, w) => s + (w[wKey] || 0), 0)
       if (!denom) return 0
       const num = base.reduce((s, w) => s + (w[key] || 0) * (w[wKey] || 0), 0)
-      return Math.round(num / denom)
+      return Math.round((num / denom) * 10) / 10
     }
     const sum = (key: 'count_total' | 'count_com' | 'count_sem') =>
       base.reduce((s, w) => s + (w[key] || 0), 0)
+    const totalNodes = sum('count_total')
+    const totalWins = base.reduce((s, w) => s + (w.wins || 0), 0)
+    const totalLosses = base.reduce((s, w) => s + (w.losses || 0), 0)
+    const winrate = totalNodes ? Math.round((totalWins / totalNodes) * 1000) / 10 : 0
     return {
       rows: base,
       footer: {
         geral: weighted('geral'),
         com: weighted('com'),
         sem: weighted('sem'),
-        count_total: sum('count_total'),
+        count_total: totalNodes,
         count_com: sum('count_com'),
         count_sem: sum('count_sem'),
+        wins: totalWins,
+        losses: totalLosses,
+        winrate,
       },
     }
   }, [weekly, weekFilter])
@@ -318,10 +370,29 @@ export default function TempoDePinoPage() {
     }
   }
 
+  const updateWin = async (id: string, win: boolean) => {
+    try {
+      const res = await fetch('/api/process-logs', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id,
+          is_win: win
+        })
+      })
+      const js = await res.json()
+      if (!js?.success) throw new Error(js?.message || 'Falha ao atualizar vitória/derrota')
+      toast({ title: 'Atualizado', description: win ? 'Marcado como vitória' : 'Marcado como derrota' })
+      setLogs(prev => prev.map(l => l.id === id ? { ...l, is_win: win } : l))
+    } catch (e: any) {
+      toast({ title: 'Erro ao salvar', description: e?.message || 'Falha ao atualizar vitória/derrota' })
+    }
+  }
+
   return (
     <div className="container mx-auto max-w-7xl px-4 py-6 space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-neutral-100">Tempo de Pino</h1>
+        <h1 className="text-2xl font-bold text-neutral-100">Estatísticas Node</h1>
       </div>
 
       {/* Resumo e gráfico */}
@@ -329,35 +400,67 @@ export default function TempoDePinoPage() {
         <CardHeader>
           <CardTitle className="text-neutral-100">Média de Ocupação (Lollipop)</CardTitle>
         </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-neutral-200">
-            <div>
-              <div className="text-sm text-neutral-400">Geral (% do tempo de pino)</div>
-              <div className="text-lg font-semibold">{averages.allPct}%</div>
+        <CardContent className="space-y-6">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
+            <div className="rounded-xl border border-blue-500/30 bg-blue-500/10 p-4 shadow-inner shadow-blue-500/10">
+              <div className="text-[11px] font-semibold uppercase tracking-wide text-blue-200/80">% de pino geral</div>
+              <div className="mt-2 flex items-baseline gap-2">
+                <span className="text-3xl font-semibold text-blue-100">{averages.allPct}%</span>
+                <span className="text-xs text-blue-100/70">todos os nodes</span>
+              </div>
             </div>
-            <div>
-              <div className="text-sm text-neutral-400">Com Chernobyl</div>
-              <div className="text-lg font-semibold">{averages.chPct}%</div>
+            <div className="rounded-xl border border-rose-500/30 bg-rose-500/10 p-4 shadow-inner shadow-rose-500/10">
+              <div className="text-[11px] font-semibold uppercase tracking-wide text-rose-200/80">% com Chernobyl</div>
+              <div className="mt-2 flex items-baseline gap-2">
+                <span className="text-3xl font-semibold text-rose-100">{averages.chPct}%</span>
+                <span className="text-xs text-rose-100/70">{averages.withChernCount} nodes</span>
+              </div>
             </div>
-            <div>
-              <div className="text-sm text-neutral-400">Sem Chernobyl</div>
-              <div className="text-lg font-semibold">{averages.noChPct}%</div>
+            <div className="rounded-xl border border-emerald-500/25 bg-emerald-500/10 p-4 shadow-inner shadow-emerald-500/10">
+              <div className="text-[11px] font-semibold uppercase tracking-wide text-emerald-200/80">% sem Chernobyl</div>
+              <div className="mt-2 flex items-baseline gap-2">
+                <span className="text-3xl font-semibold text-emerald-100">{averages.noChPct}%</span>
+                <span className="text-xs text-emerald-100/70">{averages.withoutChernCount} nodes</span>
+              </div>
             </div>
           </div>
 
-          {/* Contadores */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-neutral-200">
-            <div>
-              <div className="text-sm text-neutral-400">Nodes (Total)</div>
-              <div className="text-lg font-semibold">{averages.totalCount}</div>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
+            <div className="rounded-xl border border-neutral-800 bg-neutral-900/70 p-4">
+              <div className="flex items-center justify-between text-[11px] uppercase tracking-wide text-neutral-400">
+                <span>Winrate geral</span>
+                <span className="text-neutral-500 normal-case">{averages.totalWins}V / {averages.totalLosses}D</span>
+              </div>
+              <div className="mt-3 text-3xl font-semibold text-neutral-100">{averages.overallWinrate}%</div>
             </div>
-            <div>
-              <div className="text-sm text-neutral-400">Nodes com Chernobyl</div>
-              <div className="text-lg font-semibold">{averages.withChernCount}</div>
+            <div className="rounded-xl border border-rose-500/30 bg-rose-500/10 p-4">
+              <div className="flex items-center justify-between text-[11px] uppercase tracking-wide text-rose-200/80">
+                <span>Winrate com Chernobyl</span>
+                <span className="text-rose-100/70 normal-case">{averages.withChernCount} nodes</span>
+              </div>
+              <div className="mt-3 text-3xl font-semibold text-rose-100">{averages.withChernWinrate}%</div>
             </div>
-            <div>
-              <div className="text-sm text-neutral-400">Nodes sem Chernobyl</div>
-              <div className="text-lg font-semibold">{averages.withoutChernCount}</div>
+            <div className="rounded-xl border border-emerald-500/25 bg-emerald-500/10 p-4">
+              <div className="flex items-center justify-between text-[11px] uppercase tracking-wide text-emerald-200/80">
+                <span>Winrate sem Chernobyl</span>
+                <span className="text-emerald-100/70 normal-case">{averages.withoutChernCount} nodes</span>
+              </div>
+              <div className="mt-3 text-3xl font-semibold text-emerald-100">{averages.withoutChernWinrate}%</div>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+            <div className="rounded-xl border border-neutral-800 bg-neutral-900/70 p-4 text-neutral-200">
+              <div className="text-[11px] font-semibold uppercase tracking-wide text-neutral-400">Nodes (Total)</div>
+              <div className="mt-2 text-2xl font-semibold text-neutral-100">{averages.totalCount}</div>
+            </div>
+            <div className="rounded-xl border border-rose-500/25 bg-rose-500/5 p-4 text-neutral-200">
+              <div className="text-[11px] font-semibold uppercase tracking-wide text-rose-200/80">Nodes com Chernobyl</div>
+              <div className="mt-2 text-2xl font-semibold text-rose-100">{averages.withChernCount}</div>
+            </div>
+            <div className="rounded-xl border border-emerald-500/25 bg-emerald-500/5 p-4 text-neutral-200">
+              <div className="text-[11px] font-semibold uppercase tracking-wide text-emerald-200/80">Nodes sem Chernobyl</div>
+              <div className="mt-2 text-2xl font-semibold text-emerald-100">{averages.withoutChernCount}</div>
             </div>
           </div>
 
@@ -402,8 +505,9 @@ export default function TempoDePinoPage() {
                       <th className="px-3 py-2 text-left"><span className="inline-flex items-center gap-2"><span className="w-2 h-2 rounded-full bg-red-500"></span>Com Chernobyl</span></th>
                       <th className="px-3 py-2 text-left"><span className="inline-flex items-center gap-2"><span className="w-2 h-2 rounded-full bg-green-500"></span>Sem Chernobyl</span></th>
                       <th className="px-3 py-2 text-center">Nodes (Total)</th>
-                      <th className="px-3 py-2 text-left"><span className="inline-flex items-center gap-2"><span className="w-2 h-2 rounded-full bg-red-500"></span>Com</span></th>
-                      <th className="px-3 py-2 text-left"><span className="inline-flex items-center gap-2"><span className="w-2 h-2 rounded-full bg-green-500"></span>Sem</span></th>
+                      <th className="px-3 py-2 text-center">Vitórias</th>
+                      <th className="px-3 py-2 text-center">Derrotas</th>
+                      <th className="px-3 py-2 text-center">Winrate</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -427,8 +531,9 @@ export default function TempoDePinoPage() {
                           <td className="px-3 py-2">{bar(w.com, '#ef4444')}</td>
                           <td className="px-3 py-2">{bar(w.sem, '#22c55e')}</td>
                           <td className="px-3 py-2 font-medium text-center">{w.count_total}</td>
-                          <td className="px-3 py-2"><span className="px-2 py-0.5 rounded-full bg-red-500/20 text-red-400">{w.count_com}</span></td>
-                          <td className="px-3 py-2"><span className="px-2 py-0.5 rounded-full bg-green-500/20 text-green-400">{w.count_sem}</span></td>
+                          <td className="px-3 py-2 text-center text-green-400 font-medium">{w.wins ?? 0}</td>
+                          <td className="px-3 py-2 text-center text-red-400 font-medium">{w.losses ?? 0}</td>
+                          <td className="px-3 py-2 text-center text-neutral-200">{w.count_total ? Math.round(((w.wins || 0)/w.count_total)*1000)/10 : 0}%</td>
                         </tr>
                       )
                     })}
@@ -440,14 +545,72 @@ export default function TempoDePinoPage() {
                       <td className="px-3 py-2 text-center">{weeklyView.footer.com}%</td>
                       <td className="px-3 py-2 text-center">{weeklyView.footer.sem}%</td>
                       <td className="px-3 py-2 font-medium text-center">{weeklyView.footer.count_total}</td>
-                      <td className="px-3 py-2 text-center">{weeklyView.footer.count_com}</td>
-                      <td className="px-3 py-2 text-center">{weeklyView.footer.count_sem}</td>
+                      <td className="px-3 py-2 text-center text-green-400 font-medium">{weeklyView.footer.wins}</td>
+                      <td className="px-3 py-2 text-center text-red-400 font-medium">{weeklyView.footer.losses}</td>
+                      <td className="px-3 py-2 text-center text-neutral-200">{weeklyView.footer.winrate}%</td>
                     </tr>
                   </tfoot>
                 </table>
               </div>
             </div>
           )}
+
+          {/* Lista de logs individuais */}
+          <div className="space-y-3">
+            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+              <div>
+                <h3 className="text-neutral-100 font-semibold">Logs individuais</h3>
+                <p className="text-sm text-neutral-500">Ajuste tempos ou marque vitória/derrota.</p>
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                className="border-neutral-700 text-neutral-200"
+                onClick={() => setShowLogs(v => !v)}
+              >
+                {showLogs ? 'Esconder logs' : 'Mostrar logs'}
+              </Button>
+            </div>
+
+            {showLogs && (
+              <div className="space-y-4">
+                <div className="md:w-80">
+                  <Label htmlFor="log-filter" className="text-sm text-neutral-400">Filtrar por node ou guilda</Label>
+                  <Input
+                    id="log-filter"
+                    placeholder="Ex: castle, chern..."
+                    value={filter}
+                    onChange={(e)=>setFilter(e.target.value)}
+                    className="bg-neutral-900 border-neutral-800"
+                  />
+                </div>
+
+                {loading ? (
+                  <div className="text-neutral-400">Carregando logs...</div>
+                ) : filtered.length === 0 ? (
+                  <div className="text-neutral-500 text-sm">Nenhum log encontrado com esse filtro.</div>
+                ) : (
+                  <div className="space-y-3">
+                    {filtered.map((log) => (
+                      <TimeEditorCard
+                        key={log.id}
+                        log={log}
+                        onInvalid={(msg) => toast({ title: 'Formato inválido', description: msg })}
+                        onSave={(id, ts, ls) => updateTimes(id, ts, ls)}
+                        ignored={ignoredIds.has(log.id)}
+                        onToggleIgnored={(id) => setIgnoredIds(prev => {
+                          const next = new Set(prev)
+                          if (next.has(id)) next.delete(id); else next.add(id)
+                          return next
+                        })}
+                        onToggleWin={updateWin}
+                      />
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
         </CardContent>
       </Card>
     </div>

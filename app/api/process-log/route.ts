@@ -131,6 +131,9 @@ export async function POST(request: NextRequest) {
     const territorio = formData.get('territorio') as string;
     const node = formData.get('node') as string;
     const slowMode = ['1','true','on'].includes(String(formData.get('slowMode') || '').toLowerCase());
+    const isWinRaw = formData.get('isWin')
+    const winReason = String(formData.get('winReason') || '').trim() || undefined
+    const isWin = typeof isWinRaw === 'string' ? ['1','true','on','sim','yes'].includes(isWinRaw.toLowerCase()) : false
 
     if (!file) {
       return NextResponse.json({ error: 'Arquivo não enviado' }, { status: 400 });
@@ -467,6 +470,8 @@ export async function POST(request: NextRequest) {
       // Tempos
       totalNodeSeconds,
       lollipopOccupancySeconds: occupancyByGuild['Lollipop'] || 0,
+      isWin,
+      winReason,
     };
 
     return NextResponse.json(response);
