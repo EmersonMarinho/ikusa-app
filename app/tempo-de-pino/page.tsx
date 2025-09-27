@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button"
 import { Label } from "@/components/ui/label"
 import { useToast } from "@/hooks/use-toast"
 import { getRealHistory } from "@/lib/mock-data"
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { formatSecondsToMMSS, parseMMSS, coerceToMMSS } from "@/lib/utils"
 // Removidos gráficos nesta página
 
@@ -96,6 +97,8 @@ export default function TempoDePinoPage() {
   const [logs, setLogs] = useState<any[]>([])
   const [filter, setFilter] = useState("")
   const [ignoredIds, setIgnoredIds] = useState<Set<string>>(new Set())
+  // Controles de visualização da tabela semanal
+  const [weekFilter, setWeekFilter] = useState<'all' | 'com' | 'sem'>('all')
 
   useEffect(() => {
     const load = async () => {
@@ -170,54 +173,6 @@ export default function TempoDePinoPage() {
     }
   }
 
-  const averages = useMemo(() => {
-    const valid = filtered.filter((l: any) => (
-      !ignoredIds.has(l.id) &&
-      typeof l.lollipop_occupancy_seconds === 'number' &&
-      typeof l.total_node_seconds === 'number' &&
-      l.total_node_seconds > 0 &&
-      l.lollipop_occupancy_seconds >= 0
-    ))
-    const withChern = valid.filter((l) => hasChernobylPresence(l))
-    const withoutChern = valid.filter((l) => !hasChernobylPresence(l))
-
-    const avgPct = (arr: any[]) => {
-      if (!arr.length) return 0
-      const sumPct = arr.reduce((acc, l) => {
-        const occ = Number(l.lollipop_occupancy_seconds || 0)
-        const tot = Math.max(1, Number(l.total_node_seconds || 0))
-        const pct = Math.min(100, Math.max(0, (occ / tot) * 100))
-        return acc + pct
-      }, 0)
-      return Math.round(sumPct / arr.length)
-    }
-
-    const allPct = avgPct(valid)
-    const chPct = avgPct(withChern)
-    const noChPct = avgPct(withoutChern)
-
-    return {
-      allPct,
-      chPct,
-      noChPct,
-      totalCount: valid.length,
-      withChernCount: withChern.length,
-      withoutChernCount: withoutChern.length,
-      chartDataPct: [
-        { label: 'Geral', valuePct: allPct },
-        { label: 'Com Chernobyl', valuePct: chPct },
-        { label: 'Sem Chernobyl', valuePct: noChPct },
-      ],
-      chartDataCount: [
-        { label: 'Total', valueCount: valid.length },
-        { label: 'Com Chernobyl', valueCount: withChern.length },
-        { label: 'Sem Chernobyl', valueCount: withoutChern.length },
-      ],
-      chartConfigPct: { valuePct: { label: '% Ocupação', color: 'hsl(210 100% 56%)' } },
-      chartConfigCount: { valueCount: { label: 'Nodes', color: 'hsl(140 70% 45%)' } },
-    }
-  }, [filtered, ignoredIds])
-
   // Weekly aggregation (ISO-like, week starts Monday)
   const weekly = useMemo(() => {
     const toWeekStart = (iso: string) => {
@@ -230,6 +185,7 @@ export default function TempoDePinoPage() {
     }
 
     const valid = filtered.filter((l: any) => (
+      !ignoredIds.has(l.id) &&
       typeof l.lollipop_occupancy_seconds === 'number' &&
       typeof l.total_node_seconds === 'number' &&
       l.total_node_seconds > 0
@@ -251,7 +207,7 @@ export default function TempoDePinoPage() {
     }
 
     const data = Array.from(buckets.entries())
-      .sort(([a],[b]) => a.localeCompare(b))
+      .sort(([a],[b]) => b.localeCompare(a)) // semanas mais recentes primeiro
       .map(([weekStart, b]) => ({
         week: weekStart,
         geral: avgPct(b.items),
@@ -270,7 +226,76 @@ export default function TempoDePinoPage() {
         sem: { label: 'Sem Chernobyl', color: 'hsl(140 70% 45%)' },
       } as any,
     }
-  }, [filtered])
+  }, [filtered, ignoredIds])
+
+  const averages = useMemo(() => {
+    // Usa buckets semanais e pondera pelos counts (nodes) para alinhar com a visão semanal
+    const denomAll = weekly.data.reduce((s, w) => s + (w.count_total || 0), 0)
+    const denomCom = weekly.data.reduce((s, w) => s + (w.count_com || 0), 0)
+    const denomSem = weekly.data.reduce((s, w) => s + (w.count_sem || 0), 0)
+    const allPct = denomAll ? Math.round(weekly.data.reduce((s, w) => s + (w.geral || 0) * (w.count_total || 0), 0) / denomAll) : 0
+    const chPct = denomCom ? Math.round(weekly.data.reduce((s, w) => s + (w.com || 0) * (w.count_com || 0), 0) / denomCom) : 0
+    const noChPct = denomSem ? Math.round(weekly.data.reduce((s, w) => s + (w.sem || 0) * (w.count_sem || 0), 0) / denomSem) : 0
+
+    const totalCount = denomAll
+    const withChernCount = denomCom
+    const withoutChernCount = denomSem
+
+    return {
+      allPct,
+      chPct,
+      noChPct,
+      totalCount,
+      withChernCount,
+      withoutChernCount,
+      chartDataPct: [
+        { label: 'Geral', valuePct: allPct },
+        { label: 'Com Chernobyl', valuePct: chPct },
+        { label: 'Sem Chernobyl', valuePct: noChPct },
+      ],
+      chartDataCount: [
+        { label: 'Total', valueCount: totalCount },
+        { label: 'Com Chernobyl', valueCount: withChernCount },
+        { label: 'Sem Chernobyl', valueCount: withoutChernCount },
+      ],
+      chartConfigPct: { valuePct: { label: '% Ocupação', color: 'hsl(210 100% 56%)' } },
+      chartConfigCount: { valueCount: { label: 'Nodes', color: 'hsl(140 70% 45%)' } },
+    }
+  }, [weekly])
+
+  // Aplica filtros/ordenação para exibição
+  const weeklyView = useMemo(() => {
+    const base = weekly.data.filter((w) => {
+      if (weekFilter === 'com') return w.count_com > 0
+      if (weekFilter === 'sem') return w.count_sem > 0
+      return true
+    })
+    const weightKey: Record<'geral'|'com'|'sem', 'count_total'|'count_com'|'count_sem'> = {
+      geral: 'count_total',
+      com: 'count_com',
+      sem: 'count_sem',
+    }
+    const weighted = (key: 'geral' | 'com' | 'sem') => {
+      const wKey = weightKey[key]
+      const denom = base.reduce((s, w) => s + (w[wKey] || 0), 0)
+      if (!denom) return 0
+      const num = base.reduce((s, w) => s + (w[key] || 0) * (w[wKey] || 0), 0)
+      return Math.round(num / denom)
+    }
+    const sum = (key: 'count_total' | 'count_com' | 'count_sem') =>
+      base.reduce((s, w) => s + (w[key] || 0), 0)
+    return {
+      rows: base,
+      footer: {
+        geral: weighted('geral'),
+        com: weighted('com'),
+        sem: weighted('sem'),
+        count_total: sum('count_total'),
+        count_com: sum('count_com'),
+        count_sem: sum('count_sem'),
+      },
+    }
+  }, [weekly, weekFilter])
 
   const updateTimes = async (id: string, totalSec: number, lolliSec: number): Promise<boolean> => {
     try {
@@ -337,41 +362,88 @@ export default function TempoDePinoPage() {
           </div>
 
           {/* Histórico Lollipop (semanas) */}
-          {weekly.data.length > 0 && (
+          {weeklyView.rows.length > 0 && (
             <div className="space-y-3">
               <h3 className="text-neutral-100 font-semibold">Histórico Lollipop (semanas)</h3>
+              {/* Controles */}
+              <div className="flex flex-col md:flex-row md:items-center gap-3">
+                <div className="inline-flex rounded-md border border-neutral-800 overflow-hidden">
+                  <button
+                    className={`px-3 py-1.5 text-sm ${weekFilter==='all'?'bg-neutral-800 text-neutral-100':'text-neutral-300 hover:bg-neutral-800/60'}`}
+                    onClick={()=>setWeekFilter('all')}
+                  >Todas</button>
+                  <button
+                    className={`px-3 py-1.5 text-sm ${weekFilter==='com'?'bg-neutral-800 text-neutral-100':'text-neutral-300 hover:bg-neutral-800/60'}`}
+                    onClick={()=>setWeekFilter('com')}
+                  >Com Chernobyl</button>
+                  <button
+                    className={`px-3 py-1.5 text-sm ${weekFilter==='sem'?'bg-neutral-800 text-neutral-100':'text-neutral-300 hover:bg-neutral-800/60'}`}
+                    onClick={()=>setWeekFilter('sem')}
+                  >Sem Chernobyl</button>
+                </div>
+                <div className="text-sm text-neutral-500">Ordenado por semana (mais recente primeiro)</div>
+              </div>
               <div className="overflow-x-auto rounded border border-neutral-800">
                 <table className="min-w-full text-sm">
-                  <thead className="bg-neutral-900">
+                  <thead className="bg-neutral-900 sticky top-0 z-10">
                     <tr className="text-neutral-300">
                       <th className="px-3 py-2 text-left">Semana</th>
-                      <th className="px-3 py-2 text-left">% Geral</th>
-                      <th className="px-3 py-2 text-left">% Com Chernobyl</th>
-                      <th className="px-3 py-2 text-left">% Sem Chernobyl</th>
-                      <th className="px-3 py-2 text-left">Nodes</th>
-                      <th className="px-3 py-2 text-left">Com</th>
-                      <th className="px-3 py-2 text-left">Sem</th>
+                      <th className="px-3 py-2 text-left">
+                        <div className="inline-flex items-center gap-2">
+                          % Geral
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <span className="text-neutral-500 text-[10px] border border-neutral-700 rounded px-1 py-0.5 cursor-help">?</span>
+                            </TooltipTrigger>
+                            <TooltipContent sideOffset={6} className="bg-neutral-800 text-neutral-100">Tempo de pino médio de todas as nodes da semana.</TooltipContent>
+                          </Tooltip>
+                        </div>
+                      </th>
+                      <th className="px-3 py-2 text-left"><span className="inline-flex items-center gap-2"><span className="w-2 h-2 rounded-full bg-red-500"></span>Com Chernobyl</span></th>
+                      <th className="px-3 py-2 text-left"><span className="inline-flex items-center gap-2"><span className="w-2 h-2 rounded-full bg-green-500"></span>Sem Chernobyl</span></th>
+                      <th className="px-3 py-2 text-center">Nodes (Total)</th>
+                      <th className="px-3 py-2 text-left"><span className="inline-flex items-center gap-2"><span className="w-2 h-2 rounded-full bg-red-500"></span>Com</span></th>
+                      <th className="px-3 py-2 text-left"><span className="inline-flex items-center gap-2"><span className="w-2 h-2 rounded-full bg-green-500"></span>Sem</span></th>
                     </tr>
                   </thead>
                   <tbody>
-                    {weekly.data.map((w) => {
+                    {weeklyView.rows.map((w) => {
                       const start = new Date(w.week + 'T00:00:00Z')
                       const end = new Date(start)
                       end.setUTCDate(end.getUTCDate() + 6)
                       const label = `${start.toLocaleDateString('pt-BR', { timeZone: 'UTC' })} - ${end.toLocaleDateString('pt-BR', { timeZone: 'UTC' })}`
+                      const bar = (pct: number, color: string) => (
+                        <div className="flex items-center gap-2 min-w-[140px]">
+                          <div className="flex-1 h-2 rounded bg-neutral-800">
+                            <div className="h-2 rounded" style={{ width: `${Math.max(0, Math.min(100, pct))}%`, backgroundColor: color }} />
+                          </div>
+                          <span className="w-10 text-right">{pct}%</span>
+                        </div>
+                      )
                       return (
-                        <tr key={w.week} className="border-t border-neutral-800 hover:bg-neutral-900/60">
-                          <td className="px-3 py-2 text-neutral-200">{label}</td>
-                          <td className="px-3 py-2">{w.geral}%</td>
-                          <td className="px-3 py-2">{w.com}%</td>
-                          <td className="px-3 py-2">{w.sem}%</td>
-                          <td className="px-3 py-2">{w.count_total}</td>
-                          <td className="px-3 py-2">{w.count_com}</td>
-                          <td className="px-3 py-2">{w.count_sem}</td>
+                        <tr key={w.week} className="border-t border-neutral-800 hover:bg-neutral-900/60 odd:bg-neutral-900/40">
+                          <td className="px-3 py-2 text-neutral-200 whitespace-nowrap">{label}</td>
+                          <td className="px-3 py-2">{bar(w.geral, '#3b82f6')}</td>
+                          <td className="px-3 py-2">{bar(w.com, '#ef4444')}</td>
+                          <td className="px-3 py-2">{bar(w.sem, '#22c55e')}</td>
+                          <td className="px-3 py-2 font-medium text-center">{w.count_total}</td>
+                          <td className="px-3 py-2"><span className="px-2 py-0.5 rounded-full bg-red-500/20 text-red-400">{w.count_com}</span></td>
+                          <td className="px-3 py-2"><span className="px-2 py-0.5 rounded-full bg-green-500/20 text-green-400">{w.count_sem}</span></td>
                         </tr>
                       )
                     })}
                   </tbody>
+                  <tfoot>
+                    <tr className="border-t border-neutral-800 bg-neutral-900/60">
+                      <td className="px-3 py-2 text-neutral-300">Médias/Somas</td>
+                      <td className="px-3 py-2 text-center">{weeklyView.footer.geral}%</td>
+                      <td className="px-3 py-2 text-center">{weeklyView.footer.com}%</td>
+                      <td className="px-3 py-2 text-center">{weeklyView.footer.sem}%</td>
+                      <td className="px-3 py-2 font-medium text-center">{weeklyView.footer.count_total}</td>
+                      <td className="px-3 py-2 text-center">{weeklyView.footer.count_com}</td>
+                      <td className="px-3 py-2 text-center">{weeklyView.footer.count_sem}</td>
+                    </tr>
+                  </tfoot>
                 </table>
               </div>
             </div>

@@ -34,6 +34,8 @@ import {
 } from "lucide-react"
 import { Share2Icon, Link2Icon } from "lucide-react"
 import { useToast } from "@/components/ui/use-toast"
+import { PieChart, Pie, Cell, Legend, ResponsiveContainer, Tooltip as RechartsTooltip } from 'recharts'
+import { formatSecondsToMMSS } from "@/lib/utils"
 
 interface DayStats {
   date: string
@@ -1283,7 +1285,7 @@ export function HistoryPage() {
 
       {/* Modal Chernobyl */}
       <Dialog open={showChernModal} onOpenChange={setShowChernModal}>
-        <DialogContent className="w-[96vw] max-w-[1400px] max-h-[90vh] overflow-hidden bg-neutral-900 border-neutral-700">
+        <DialogContent className="w-[98vw] max-w-[1600px] max-h-[95vh] overflow-hidden bg-neutral-900 border-neutral-700">
           <DialogHeader>
             <DialogTitle className="text-neutral-100">Jogadores da Chernobyl</DialogTitle>
           </DialogHeader>
@@ -1723,6 +1725,7 @@ export function HistoryPage() {
                         <TabsTrigger value="kd-vs-guildas">KD vs Guildas</TabsTrigger>
                         <TabsTrigger value="gs-lollipop">GS Lollipop</TabsTrigger>
                         <TabsTrigger value="gs-chernobyl">GS Chernobyl</TabsTrigger>
+                        <TabsTrigger value="tempo-pino">Tempo de Pino</TabsTrigger>
                       </TabsList>
 
                       <TabsContent value="resumo" className="space-y-6 mt-4">
@@ -2162,7 +2165,7 @@ export function HistoryPage() {
                           {lollipopGearscore.length > 0 && (
                             <>
                               {/* Estatísticas Gerais */}
-                              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                              <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
                                 <Card className="bg-neutral-800 border-neutral-700">
                                   <CardHeader className="pb-2">
                                     <CardTitle className="text-sm font-medium text-neutral-300">Total de Participants</CardTitle>
@@ -2463,7 +2466,6 @@ export function HistoryPage() {
                               <p className="text-red-400 text-sm">{chernError}</p>
                             </div>
                           )}
-
                           {chernGearscore.length > 0 && (
                             <>
                               <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
@@ -2509,6 +2511,8 @@ export function HistoryPage() {
                                   </CardContent>
                                 </Card>
 
+                                {/* Gráfico de pino removido desta aba */}
+
                               </div>
 
                               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
@@ -2533,8 +2537,6 @@ export function HistoryPage() {
                                 </Card>
                               </div>
 
-                              {/* Gráfico de GS médio por registro (simplificado) */}
-                              {/* Gráfico removido a pedido */}
 
                               <Card className="bg-neutral-800 border-neutral-700">
                                 <CardHeader>
@@ -2581,6 +2583,77 @@ export function HistoryPage() {
                             </div>
                           )}
                         </div>
+                      </TabsContent>
+
+                      {/* Nova aba: Tempo de Pino */}
+                      <TabsContent value="tempo-pino" className="mt-4">
+                        {(() => {
+                          const currentRecord = historyData.find(r => r.id === viewingComplete || r.arquivo_nome === viewingComplete)
+                          if (!currentRecord) return (
+                            <div className="text-neutral-400">Nenhum log selecionado.</div>
+                          )
+                          const total = Number((currentRecord as any).total_node_seconds ?? (currentRecord as any).totalNodeSeconds ?? 0)
+                          const lolli = Number((currentRecord as any).lollipop_occupancy_seconds ?? (currentRecord as any).lollipopOccupancySeconds ?? 0)
+                          const outras = Math.max(0, total - lolli)
+                          const pctL = total > 0 ? Math.round(((lolli/total)*100)*10)/10 : 0
+                          const pctO = total > 0 ? Math.round(((outras/total)*100)*10)/10 : 0
+                          const othersGuilds = ((currentRecord.guilds || [currentRecord.guild]) as string[])
+                            .filter(Boolean)
+                            .filter(g => (g || '').toLowerCase() !== 'lollipop')
+                            .sort((a,b)=> a.localeCompare(b))
+                          const data = [
+                            { name: `Lollipop (${pctL}%)`, value: lolli },
+                            { name: `Outras (${pctO}%)`, value: outras },
+                          ] as Array<{name:string,value:number}>
+                          const colors = ['#22c55e', '#ef4444', '#3b82f6']
+                          return (
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                              <Card className="bg-neutral-800 border-neutral-700">
+                                <CardHeader className="pb-2">
+                                  <CardTitle className="text-sm font-medium text-neutral-300">% de pino (Lollipop)</CardTitle>
+                                </CardHeader>
+                                <CardContent>
+                                  <div className="text-3xl font-bold text-neutral-100">{pctL}%</div>
+                                  <p className="text-xs text-neutral-400 mt-1">{formatSecondsToMMSS(lolli)} de {formatSecondsToMMSS(total)}</p>
+                                  {othersGuilds.length > 0 && (
+                                    <div className="mt-3">
+                                      <div className="text-xs text-neutral-400 mb-1">Outras guildas no dia</div>
+                                      <div className="flex flex-wrap gap-2">
+                                        {othersGuilds.map((g) => (
+                                          <span key={g} className={`px-2 py-0.5 rounded border ${getGuildBadgeClasses ? getGuildBadgeClasses(g) : 'border-neutral-600 text-neutral-200'}`}>{g}</span>
+                                        ))}
+                                      </div>
+                                    </div>
+                                  )}
+                                </CardContent>
+                              </Card>
+                              <Card className="bg-neutral-800 border-neutral-700 md:col-span-2">
+                                <CardHeader className="pb-2">
+                                  <CardTitle className="text-sm font-medium text-neutral-300">Distribuição do tempo de pino</CardTitle>
+                                </CardHeader>
+                                <CardContent>
+                                  {total > 0 ? (
+                                    <div className="h-56">
+                                      <ResponsiveContainer width="100%" height="100%">
+                                        <PieChart>
+                                          <Pie data={data} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={60} outerRadius={100} label={false}>
+                                            {data.map((entry, index) => (
+                                              <Cell key={`cell-t-${index}`} fill={colors[index % colors.length]} />
+                                            ))}
+                                          </Pie>
+                                          <RechartsTooltip formatter={(v: any, n: any) => [`${formatSecondsToMMSS(Number(v)||0)}`, n]} />
+                                        </PieChart>
+                                      </ResponsiveContainer>
+                                      {/* legend/tempo custom removidos a pedido */}
+                                    </div>
+                                  ) : (
+                                    <p className="text-neutral-400 text-sm">Sem dados de tempo para este log.</p>
+                                  )}
+                                </CardContent>
+                              </Card>
+                            </div>
+                          )
+                        })()}
                       </TabsContent>
                     </Tabs>
                   </div>
