@@ -32,6 +32,8 @@ import {
   FlagIcon,
   RefreshCw,
 } from "lucide-react"
+import { Share2Icon, Link2Icon } from "lucide-react"
+import { useToast } from "@/components/ui/use-toast"
 
 interface DayStats {
   date: string
@@ -56,6 +58,7 @@ interface GuildStats {
 }
 
 export function HistoryPage() {
+  const { toast } = useToast()
   const [selectedGuilds, setSelectedGuilds] = useState<string[]>([])
   const [expandedDetails, setExpandedDetails] = useState<string | null>(null)
   const [viewingComplete, setViewingComplete] = useState<string | null>(null)
@@ -530,7 +533,7 @@ export function HistoryPage() {
     return filtered.sort((a,b)=> (order.get(a.toLowerCase()) ?? 99) - (order.get(b.toLowerCase()) ?? 99))
   }, [historyData])
 
-  // Blocos de 15 registros focados na Lollipop (ordem cronológica por event_date/created_at)
+  // Blocos semanais da Lollipop: agrupa por semana (ISO, segunda a domingo), ordena por semana e agrega métricas
   const lollipopBlocks = useMemo(() => {
     try {
       // Filtra apenas registros onde Lollipop participou
@@ -538,15 +541,35 @@ export function HistoryPage() {
         const gs = (record.guilds || [record.guild] || []).map((g: string) => (g || '').toLowerCase())
         return gs.includes('lollipop')
       })
-      // Ordena por data do evento (fallbacks)
-      const byDate = [...participated].sort((a: any, b: any) => {
-        const da = new Date(a.event_date || a.created_at || a.date || 0).getTime()
-        const db = new Date(b.event_date || b.created_at || b.date || 0).getTime()
-        return da - db
-      })
-      // Quebra em blocos de 5
+
+      // Função para obter chave de semana ISO (YYYY-Www)
+      const getWeekKey = (dateStr: string) => {
+        const d = new Date(dateStr)
+        const target = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()))
+        // Ajusta para quinta-feira da semana ISO
+        const dayNum = (target.getUTCDay() + 6) % 7
+        target.setUTCDate(target.getUTCDate() - dayNum + 3)
+        const firstThursday = new Date(Date.UTC(target.getUTCFullYear(), 0, 4))
+        const diff = target.getTime() - firstThursday.getTime()
+        const week = 1 + Math.round(diff / (7 * 24 * 3600 * 1000))
+        const year = target.getUTCFullYear()
+        return `${year}-W${String(week).padStart(2, '0')}`
+      }
+
+      // Agrupa registros por semana ISO
+      const groups: Record<string, any[]> = {}
+      for (const r of participated) {
+        const dateStr = r.event_date || r.created_at || r.date || ''
+        const key = getWeekKey(dateStr)
+        if (!groups[key]) groups[key] = []
+        groups[key].push(r)
+      }
+
+      // Ordena semanas (mais antigo → mais recente)
+      const weekKeys = Object.keys(groups).sort((a, b) => a.localeCompare(b))
+
       const blocks: Array<{
-        index: number
+        weekKey: string
         from: string
         to: string
         recordCount: number
@@ -557,9 +580,9 @@ export function HistoryPage() {
         deathsVsChernobyl: number
         kdVsChernobyl: number
       }> = []
-      for (let i = 0; i < byDate.length; i += 5) {
-        const slice = byDate.slice(i, i + 5)
-        if (slice.length === 0) continue
+
+      for (const wk of weekKeys) {
+        const slice = groups[wk].sort((a: any, b: any) => new Date(a.event_date || a.created_at || a.date || 0).getTime() - new Date(b.event_date || b.created_at || b.date || 0).getTime())
         let kills = 0
         let deaths = 0
         let killsVsChernobyl = 0
@@ -567,36 +590,31 @@ export function HistoryPage() {
         for (const r of slice) {
           const kbg = r.kills_by_guild || r.killsByGuild || {}
           const dbg = r.deaths_by_guild || r.deathsByGuild || {}
-          // Aceita variações de chave
           const k = kbg['Lollipop'] ?? kbg['lollipop'] ?? 0
           const d = dbg['Lollipop'] ?? dbg['lollipop'] ?? 0
           kills += Number(k) || 0
           deaths += Number(d) || 0
 
-          // Vs específicos pela matriz de kills
           const km = r.kills_matrix || r.killsMatrix || {}
           const rowLollipop = km['Lollipop'] || km['lollipop'] || km['LOLLIPOP'] || {}
           const rowChernobyl = km['Chernobyl'] || km['chernobyl'] || km['CHERNOBYL'] || {}
-          // Kills da Lollipop contra adversário
           killsVsChernobyl += Number(rowLollipop['Chernobyl'] ?? rowLollipop['chernobyl'] ?? 0) || 0
-          // Deaths da Lollipop contra adversário = kills que o adversário fez na Lollipop
           deathsVsChernobyl += Number(rowChernobyl['Lollipop'] ?? rowChernobyl['lollipop'] ?? 0) || 0
         }
         const kd = deaths > 0 ? kills / deaths : (kills > 0 ? Infinity : 0)
         const kdVsChernobyl = deathsVsChernobyl > 0 ? (killsVsChernobyl / deathsVsChernobyl) : (killsVsChernobyl > 0 ? Infinity : 0)
         const from = toLocalYMD(slice[0].event_date || slice[0].created_at || slice[0].date || '')
         const to = toLocalYMD(slice[slice.length - 1].event_date || slice[slice.length - 1].created_at || slice[slice.length - 1].date || '')
-        blocks.push({ index: Math.floor(i / 5) + 1, from, to, recordCount: slice.length, kills, deaths, kd, 
-          killsVsChernobyl, deathsVsChernobyl, kdVsChernobyl,
-          })
+        blocks.push({ weekKey: wk, from, to, recordCount: slice.length, kills, deaths, kd, killsVsChernobyl, deathsVsChernobyl, kdVsChernobyl })
       }
+
       return blocks
     } catch {
       return []
     }
   }, [historyData])
 
-  // Quantidade visível de blocos Lollipop (mostra últimos N)
+  // Quantidade visível de blocos semanais (mostra últimas 5 semanas)
   const [lollipopBlocksVisible, setLollipopBlocksVisible] = useState(5)
   // Mapa família -> guilda (para filtros como "Sem Manifest")
   const [familyToGuild, setFamilyToGuild] = useState<Record<string, string>>({})
@@ -918,6 +936,17 @@ export function HistoryPage() {
     setSelectedGuildView("all")
   }
 
+  const copyShareLink = async (recordId: string) => {
+    try {
+      const base = typeof window !== 'undefined' ? window.location.origin : ''
+      const url = `${base}/h/${recordId}`
+      await navigator.clipboard.writeText(url)
+      toast({ title: 'Link copiado', description: 'URL de compartilhamento copiada para a área de transferência.' })
+    } catch {
+      toast({ title: 'Falha ao copiar', description: 'Não foi possível copiar o link.', variant: 'destructive' as any })
+    }
+  }
+
   // Fechar modal com tecla Esc
   useEffect(() => {
     if (!viewingComplete) return
@@ -1031,14 +1060,14 @@ export function HistoryPage() {
         </CardContent>
       </Card>
 
-      {/* Histórico Lollipop (blocos de 5) */}
+      {/* Histórico Lollipop (semanas) */}
       {lollipopBlocks.length > 0 && (
         <Card className="border-neutral-800 bg-neutral-900 mt-6">
           <CardHeader>
             <CardTitle className="text-neutral-100 flex items-center justify-between">
               <span className="flex items-center">
                 <TrendingUpIcon className="h-5 w-5 mr-2" />
-                Histórico Lollipop (blocos de 5)
+                Histórico Lollipop (semanas)
               </span>
               <div className="text-sm text-neutral-400">
                 Mostrando últimos {Math.min(lollipopBlocksVisible, lollipopBlocks.length)} de {lollipopBlocks.length}
@@ -1050,7 +1079,7 @@ export function HistoryPage() {
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-neutral-700 text-neutral-400">
-                    <th className="text-left py-2 px-2">Bloco</th>
+                    <th className="text-left py-2 px-2">Semana</th>
                     <th className="text-left py-2 px-2">Período</th>
                     <th className="text-center py-2 px-2">Registros</th>
                     <th className="text-center py-2 px-2">Kills</th>
@@ -1064,8 +1093,8 @@ export function HistoryPage() {
                 </thead>
                 <tbody>
                   {lollipopBlocks.slice(-lollipopBlocksVisible).map((b) => (
-                    <tr key={b.index} className="border-b border-neutral-800 hover:bg-neutral-800">
-                      <td className="py-2 px-2 text-neutral-200 font-medium">#{b.index}</td>
+                    <tr key={(b as any).weekKey || b.from} className="border-b border-neutral-800 hover:bg-neutral-800">
+                      <td className="py-2 px-2 text-neutral-200 font-medium">{(b as any).weekKey || '—'}</td>
                       <td className="py-2 px-2 text-neutral-300">{b.from} → {b.to}</td>
                       <td className="py-2 px-2 text-center text-neutral-300">{b.recordCount}</td>
                       <td className="py-2 px-2 text-center text-green-400 font-medium">{b.kills}</td>
@@ -1082,7 +1111,7 @@ export function HistoryPage() {
               {lollipopBlocksVisible < lollipopBlocks.length && (
                 <div className="flex justify-center mt-4">
                   <Button variant="outline" size="sm" className="border-neutral-700 text-neutral-200" onClick={() => setLollipopBlocksVisible(v => v + 5)}>
-                    Ver mais
+                    Ver mais semanas
                   </Button>
                 </div>
               )}
@@ -1606,15 +1635,26 @@ export function HistoryPage() {
                             </div>
                           </div>
                         </div>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => viewCompleteRecord(record.id)}
-                          className="text-neutral-400 hover:text-neutral-200"
-                        >
-                          <EyeIcon className="h-4 w-4 mr-2" />
-                          Ver
-                        </Button>
+                        <div className="flex items-center gap-1">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => copyShareLink(record.id)}
+                            className="text-neutral-400 hover:text-neutral-200"
+                            title="Compartilhar"
+                          >
+                            <Share2Icon className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => viewCompleteRecord(record.id)}
+                            className="text-neutral-400 hover:text-neutral-200"
+                          >
+                            <EyeIcon className="h-4 w-4 mr-2" />
+                            Ver
+                          </Button>
+                        </div>
                       </div>
                     ))
                   })()}
@@ -1665,9 +1705,14 @@ export function HistoryPage() {
                           <p className="text-sm text-neutral-400 mt-1">Arquivo: {record.arquivo_nome}</p>
                         )}
                       </div>
-                      <Button variant="ghost" size="sm" onClick={closeCompleteRecord}>
-                        <XIcon className="h-5 w-5" />
-                      </Button>
+                      <div className="flex items-center gap-1">
+                        <Button variant="ghost" size="sm" onClick={() => copyShareLink(record.id)} title="Compartilhar">
+                          <Link2Icon className="h-5 w-5" />
+                        </Button>
+                        <Button variant="ghost" size="sm" onClick={closeCompleteRecord}>
+                          <XIcon className="h-5 w-5" />
+                        </Button>
+                      </div>
                     </div>
 
                     <Tabs defaultValue="resumo">

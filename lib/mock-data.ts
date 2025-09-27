@@ -30,6 +30,9 @@ export interface ProcessedLog {
   node: string
   guildasAdversarias: string[]
   detectedGuilds?: string[] // Guildas detectadas automaticamente no log
+  // Tempo de node e ocupação (segundos)
+  totalNodeSeconds?: number
+  lollipopOccupancySeconds?: number
 }
 
 export interface HistoryRecord {
@@ -204,6 +207,8 @@ export async function saveToDatabase(data: ProcessedLog & { event_date?: string 
       node: data.node,
       guildas_adversarias: data.guildasAdversarias,
       event_date: data.event_date || null,
+      total_node_seconds: data.totalNodeSeconds ?? null,
+      lollipop_occupancy_seconds: data.lollipopOccupancySeconds ?? null,
     }
 
     console.log('[Salvar] Enviando para process_logs:', recordData)

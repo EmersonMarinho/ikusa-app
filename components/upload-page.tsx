@@ -11,6 +11,7 @@ import { Label } from "@/components/ui/label"
 import { processLogFile, saveToDatabase, type ProcessedLog } from "@/lib/mock-data"
 import { CollapsibleClassItem } from "@/components/shared/collapsible-class-item"
 import { StatsCard } from "@/components/shared/stats-card"
+import { formatSecondsToMMSS, parseMMSS, coerceToMMSS } from "@/lib/utils"
 import {
   UploadIcon,
   FileTextIcon,
@@ -41,6 +42,10 @@ export function UploadPage() {
   const [territorio, setTerritorio] = useState<'Calpheon' | 'Kamasylvia' | 'Siege'>('Calpheon')
   const [node, setNode] = useState('')
   const [eventDate, setEventDate] = useState<string>('') // yyyy-MM-dd
+  const [slowMode, setSlowMode] = useState<boolean>(false)
+  // Tempos (edição no formato mm:ss)
+  const [totalNodeMMSS, setTotalNodeMMSS] = useState<string>("")
+  const [lollipopMMSS, setLollipopMMSS] = useState<string>("")
 
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFile = event.target.files?.[0]
@@ -63,6 +68,7 @@ export function UploadPage() {
       formData.append('file', file)
       formData.append('territorio', territorio)
       formData.append('node', node)
+      if (slowMode) formData.append('slowMode', '1')
 
       const response = await fetch('/api/process-log', {
         method: 'POST',
@@ -75,11 +81,24 @@ export function UploadPage() {
 
       const data = await response.json()
       setProcessedData(data)
+      // Preenche tempos calculados automaticamente (se presentes)
+      const tn = Number(data?.totalNodeSeconds || 0)
+      const lo = Number(data?.lollipopOccupancySeconds || 0)
+      setTotalNodeMMSS(formatSecondsToMMSS(tn))
+      setLollipopMMSS(formatSecondsToMMSS(lo))
       
       // Salva automaticamente no banco se a opção estiver marcada
       if (saveToDb) {
         try {
-          await saveToDatabase({ ...data, event_date: eventDate ? new Date(eventDate).toISOString() : undefined } as any, file.name)
+          // Se não for Siege, aplica overrides do que foi editado nos campos mm:ss
+          let overrides: any = {}
+          if (territorio !== 'Siege') {
+            const tn = parseMMSS(totalNodeMMSS)
+            const lo = parseMMSS(lollipopMMSS)
+            if (tn != null) overrides.totalNodeSeconds = tn
+            if (lo != null) overrides.lollipopOccupancySeconds = lo
+          }
+          await saveToDatabase({ ...data, ...overrides, event_date: eventDate ? new Date(eventDate).toISOString() : undefined } as any, file.name)
           setSaveSuccess(true)
           setSaveError(null)
         } catch (saveError) {
@@ -126,6 +145,15 @@ export function UploadPage() {
     lines.push('='.repeat(50))
     lines.push(`Território: ${processedData.territorio}`)
     lines.push(`Node: ${processedData.node}`)
+    if (processedData.territorio !== 'Siege') {
+      if (processedData.totalNodeSeconds != null) {
+        lines.push(`Tempo total da node: ${formatSecondsToMMSS(processedData.totalNodeSeconds || 0)}`)
+      }
+      if (processedData.lollipopOccupancySeconds != null) {
+        const pct = (processedData.totalNodeSeconds||0) ? ` (${Math.round(((processedData.lollipopOccupancySeconds||0)/(processedData.totalNodeSeconds||1))*100)}%)` : ''
+        lines.push(`Ocupação Lollipop: ${formatSecondsToMMSS(processedData.lollipopOccupancySeconds || 0)}${pct}`)
+      }
+    }
     lines.push(`Guildas Detectadas: ${processedData.detectedGuilds?.join(', ') || 'Nenhuma'}`)
     lines.push('')
 
@@ -277,6 +305,32 @@ export function UploadPage() {
             </div>
           </div>
 
+          {/* Campos de tempo - ocultar em Siege */}
+          {territorio !== 'Siege' && (
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4">
+            <div className="space-y-2">
+              <Label htmlFor="total-node-mmss">Tempo total da node (mm:ss)</Label>
+              <Input
+                id="total-node-mmss"
+                placeholder="mm:ss"
+                value={totalNodeMMSS}
+                onChange={(e) => setTotalNodeMMSS(coerceToMMSS(e.target.value))}
+                className="bg-neutral-800 border-neutral-700"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="lollipop-mmss">Ocupação Lollipop (mm:ss)</Label>
+              <Input
+                id="lollipop-mmss"
+                placeholder="mm:ss"
+                value={lollipopMMSS}
+                onChange={(e) => setLollipopMMSS(coerceToMMSS(e.target.value))}
+                className="bg-neutral-800 border-neutral-700"
+              />
+            </div>
+          </div>
+          )}
+
           <div className="space-y-2">
             <Label>Salvamento Automático</Label>
             <div className="flex items-center space-x-2">
@@ -293,6 +347,17 @@ export function UploadPage() {
             <p className="text-sm text-neutral-400">
               As guildas serão detectadas automaticamente do log
             </p>
+            <div className="flex items-center space-x-2 pt-2">
+              <Checkbox
+                id="slow-mode"
+                checked={slowMode}
+                onCheckedChange={(v) => setSlowMode(!!v)}
+                className="data-[state=checked]:bg-blue-600 data-[state=checked]:border-blue-600"
+              />
+              <label htmlFor="slow-mode" className="text-sm text-neutral-200">
+                Modo lento (logs grandes)
+              </label>
+            </div>
           </div>
 
           <Button
@@ -385,6 +450,13 @@ export function UploadPage() {
               value={processedData.totalGeral}
               variant="success"
             />
+            {processedData.territorio !== 'Siege' && (
+              <StatsCard
+                title="Tempo total"
+                value={formatSecondsToMMSS(processedData.totalNodeSeconds || 0)}
+                variant="info"
+              />
+            )}
             {processedData.killsByGuild && (
               <StatsCard
                 title="Total Kills"
@@ -416,6 +488,15 @@ export function UploadPage() {
                     />
                   ))}
                 </div>
+                {processedData.territorio !== 'Siege' && (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+                    <StatsCard
+                      title="Ocupação Lollipop"
+                      value={`${formatSecondsToMMSS(processedData.lollipopOccupancySeconds || 0)}${(processedData.totalNodeSeconds||0) ? ` • ${Math.round(((processedData.lollipopOccupancySeconds||0)/(processedData.totalNodeSeconds||1))*100)}%` : ''}`}
+                      variant="info"
+                    />
+                  </div>
+                )}
               </CardContent>
             </Card>
           )}

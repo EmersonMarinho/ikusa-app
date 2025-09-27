@@ -14,6 +14,7 @@ const navigation = [
   { name: "KDA Mensal", href: "/kda-mensal" },
   { name: "Gearscore", href: "/gearscore" },
   { name: "Chernobyl", href: "/chernobyl" },
+  { name: "Tempo de Pino", href: "/tempo-de-pino" },
 ]
 
 export function Header() {

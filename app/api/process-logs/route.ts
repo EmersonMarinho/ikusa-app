@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabase } from '@/lib/supabase-kda'
+import { createClient } from '@supabase/supabase-js'
 
 export const runtime = 'nodejs'
 
@@ -84,5 +85,46 @@ export async function DELETE(_request: NextRequest) {
   } catch (error) {
     console.error('Exceção ao remover último log:', error)
     return NextResponse.json({ success: false, message: 'Erro interno ao remover último log' }, { status: 500 })
+  }
+}
+
+// PATCH: Atualiza tempos de node/ocupação por ID
+export async function PATCH(request: NextRequest) {
+  try {
+    const body = await request.json()
+    const { id, total_node_seconds, lollipop_occupancy_seconds } = body || {}
+
+    if (!id) {
+      return NextResponse.json({ success: false, message: 'Campo id é obrigatório' }, { status: 400 })
+    }
+
+    const payload: Record<string, any> = {}
+    if (typeof total_node_seconds === 'number') payload.total_node_seconds = Math.max(0, Math.floor(total_node_seconds))
+    if (typeof lollipop_occupancy_seconds === 'number') payload.lollipop_occupancy_seconds = Math.max(0, Math.floor(lollipop_occupancy_seconds))
+
+    if (Object.keys(payload).length === 0) {
+      return NextResponse.json({ success: false, message: 'Nenhum campo válido para atualizar' }, { status: 400 })
+    }
+
+    // Usa service role key se disponível para bypass de RLS no servidor
+    const adminUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
+    const adminKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+    const adminClient = createClient(adminUrl, adminKey)
+
+    const { data, error } = await adminClient
+      .from('process_logs')
+      .update(payload)
+      .eq('id', id)
+      .select('*')
+      .single()
+
+    if (error) {
+      return NextResponse.json({ success: false, message: 'Erro ao atualizar log', details: error.message }, { status: 500 })
+    }
+
+    return NextResponse.json({ success: true, log: data })
+  } catch (error) {
+    console.error('Exceção ao atualizar log:', error)
+    return NextResponse.json({ success: false, message: 'Erro interno ao atualizar log' }, { status: 500 })
   }
 }

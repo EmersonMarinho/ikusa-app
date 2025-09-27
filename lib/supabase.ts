@@ -35,6 +35,9 @@ export interface ProcessLogRecord {
   node: string
   guildas_adversarias: string[]
   event_date?: string | null
+  // Tempos (segundos)
+  total_node_seconds?: number | null
+  lollipop_occupancy_seconds?: number | null
 }
 
 // Função para inserir log processado

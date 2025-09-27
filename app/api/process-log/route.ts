@@ -130,6 +130,7 @@ export async function POST(request: NextRequest) {
     const file = formData.get('file') as File;
     const territorio = formData.get('territorio') as string;
     const node = formData.get('node') as string;
+    const slowMode = ['1','true','on'].includes(String(formData.get('slowMode') || '').toLowerCase());
 
     if (!file) {
       return NextResponse.json({ error: 'Arquivo não enviado' }, { status: 400 });
@@ -156,21 +157,65 @@ export async function POST(request: NextRequest) {
     const classMap: Record<string, Array<{ nick: string; familia: string }>> = {};
     const classMapByGuild: Record<string, Record<string, Array<{ nick: string; familia: string }>>> = {};
 
-    // Processamento em lotes para acelerar (sem rate limiting como nos scripts originais)
+    // Processamento em lotes (slowMode reduz concorrência e aplica throttle/retries)
     const allNicksArray = Array.from(allNicks);
-    const BATCH_SIZE = 10; // Processa 10 jogadores em paralelo (igual aos scripts originais)
+    // Slow mode: 1 requisição por segundo (serial)
+    const BATCH_SIZE = slowMode ? 1 : 10;
+    const THROTTLE_MS = slowMode ? 1000 : 300;
+    const RETRIES = slowMode ? 5 : 2;
+
+    const sanitizeNick = (raw: string) =>
+      (raw || '')
+        .normalize('NFKC')
+        .replace(/[^\p{L}\p{N}_\- ]/gu, '')
+        .replace(/\s+/g, ' ')
+        .trim();
+
+    async function getNickSafe(nick: string) {
+      const n = sanitizeNick(nick);
+      let lastErr: any;
+      for (let i = 0; i <= RETRIES; i++) {
+        try {
+          const res = await getClassAndFamilyForNick(n);
+          const classe = (res?.classe || '').toLowerCase();
+          const familia = (res?.familia || '').toLowerCase();
+          const notFound =
+            !res ||
+            !res.classe ||
+            classe.includes('não encontrada') ||
+            !res.familia ||
+            familia.includes('não encontrada');
+          if (notFound && i < RETRIES) {
+            const backoff = THROTTLE_MS > 0 ? THROTTLE_MS : 500;
+            const jitter = Math.floor(Math.random() * 150);
+            await new Promise(r => setTimeout(r, backoff * Math.pow(2, i) + jitter));
+            continue;
+          }
+          return res;
+        } catch (e) {
+          lastErr = e;
+          const backoff = THROTTLE_MS > 0 ? THROTTLE_MS : 500;
+          const jitter = Math.floor(Math.random() * 150);
+          await new Promise(r => setTimeout(r, backoff * Math.pow(2, i) + jitter));
+        }
+      }
+      throw lastErr;
+    }
     let processed = 0;
     
     for (let i = 0; i < allNicksArray.length; i += BATCH_SIZE) {
       const batch = allNicksArray.slice(i, i + BATCH_SIZE);
       
-      // Processa lote em paralelo
+      // Processa lote em paralelo (com retries/sanitização)
       const batchPromises = batch.map(async (nick) => {
-        const { classe, familia } = await getClassAndFamilyForNick(nick);
+        const { classe, familia } = await getNickSafe(nick);
         return { nick, classe, familia };
       });
       
       const batchResults = await Promise.all(batchPromises);
+      if (THROTTLE_MS > 0) {
+        await new Promise(r => setTimeout(r, THROTTLE_MS));
+      }
       
       // Processa resultados do lote
       for (const { nick, classe, familia } of batchResults) {
@@ -339,6 +384,62 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // Cálculo de tempo total da node e ocupação por guilda (heurística baseada nos eventos)
+    function parseTimestamp(line: string): number | null {
+      // Formato esperado: [HH:MM:SS]
+      const m = line.match(/^\[(\d{2}):(\d{2}):(\d{2})\]/);
+      if (!m) return null;
+      const hh = Number(m[1]);
+      const mm = Number(m[2]);
+      const ss = Number(m[3]);
+      if (Number.isNaN(hh) || Number.isNaN(mm) || Number.isNaN(ss)) return null;
+      return hh * 3600 + mm * 60 + ss;
+    }
+
+    type TimedEvent = { t: number; ownerGuild: string | null };
+    const timedEvents: TimedEvent[] = [];
+    for (const line of lines) {
+      const t = parseTimestamp(line);
+      if (t == null) continue;
+      let ownerGuild: string | null = null;
+      // Tenta extrair guilda dominante do evento (guilda do killer)
+      const killMatch = line.match(/\] (.+?) has killed (.+?) from (.+?) /i);
+      const deathMatch = line.match(/\] (.+?) died to (.+?) from (.+?) /i);
+      if (killMatch) {
+        const killerNick = killMatch[1]?.trim() || '';
+        // Determina guilda do killer procurando em quais guildas o nick aparece
+        for (const g of guilds) {
+          if (guildToNicks[g]?.has(killerNick)) { ownerGuild = g; break; }
+        }
+      } else if (deathMatch) {
+        const killerNick = deathMatch[2]?.trim() || '';
+        // Guilda do killer vem no próprio match, mas priorizamos por segurança o mapeamento por nick
+        for (const g of guilds) {
+          if (guildToNicks[g]?.has(killerNick)) { ownerGuild = g; break; }
+        }
+        if (!ownerGuild) ownerGuild = (deathMatch[3]?.trim() || '') || null;
+      }
+      timedEvents.push({ t, ownerGuild });
+    }
+
+    timedEvents.sort((a, b) => a.t - b.t);
+    let totalNodeSeconds = 0;
+    const occupancyByGuild: Record<string, number> = {};
+    if (timedEvents.length >= 2) {
+      const startT = timedEvents[0].t;
+      const endT = timedEvents[timedEvents.length - 1].t;
+      totalNodeSeconds = Math.max(0, endT - startT);
+      for (let i = 0; i < timedEvents.length - 1; i++) {
+        const cur = timedEvents[i];
+        const nxt = timedEvents[i + 1];
+        const dt = Math.max(0, nxt.t - cur.t);
+        if (!dt) continue;
+        const g = (cur.ownerGuild || '').trim();
+        if (!g) continue;
+        occupancyByGuild[g] = (occupancyByGuild[g] || 0) + dt;
+      }
+    }
+
     // Prepara dados de resposta
     const totalPorClasse: Array<{ classe: string; count: number }> = Object.keys(classMap).map((classe) => ({
       classe,
@@ -363,6 +464,9 @@ export async function POST(request: NextRequest) {
       detectedGuilds: allDetectedGuilds,
       // Estatísticas individuais por jogador (como nos scripts do usuário)
       playerStatsByGuild,
+      // Tempos
+      totalNodeSeconds,
+      lollipopOccupancySeconds: occupancyByGuild['Lollipop'] || 0,
     };
 
     return NextResponse.json(response);
