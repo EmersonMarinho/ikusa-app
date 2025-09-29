@@ -85,27 +85,59 @@ export function UploadPage() {
       }
 
       const data = await response.json()
-      setProcessedData(data)
-      // Preenche tempos calculados automaticamente (se presentes)
-      const tn = Number(data?.totalNodeSeconds || 0)
-      const lo = Number(data?.lollipopOccupancySeconds || 0)
-      setTotalNodeMMSS(formatSecondsToMMSS(tn))
-      setLollipopMMSS(formatSecondsToMMSS(lo))
+
+      const rawTotalSeconds = Number(data?.totalNodeSeconds ?? 0)
+      const rawLollipopSeconds = Number(data?.lollipopOccupancySeconds ?? 0)
+
+      const manualTotalSeconds =
+        territorio !== 'Siege' ? parseMMSS(totalNodeMMSS) : null
+      const manualLollipopSeconds =
+        territorio !== 'Siege' ? parseMMSS(lollipopMMSS) : null
+
+      const effectiveTotalSeconds =
+        territorio === 'Siege'
+          ? rawTotalSeconds
+          : manualTotalSeconds ?? rawTotalSeconds
+      const effectiveLollipopSeconds =
+        territorio === 'Siege'
+          ? rawLollipopSeconds
+          : manualLollipopSeconds ?? rawLollipopSeconds
+
+      const processedWithManual = {
+        ...data,
+        totalNodeSeconds: effectiveTotalSeconds,
+        lollipopOccupancySeconds: effectiveLollipopSeconds,
+      }
+
+      setProcessedData(processedWithManual)
+
+      const fallbackTotalMMSS = formatSecondsToMMSS(effectiveTotalSeconds)
+      const fallbackLollipopMMSS = formatSecondsToMMSS(effectiveLollipopSeconds)
+
+      setTotalNodeMMSS((prev) => {
+        const trimmed = prev.trim()
+        return trimmed ? prev : fallbackTotalMMSS
+      })
+      setLollipopMMSS((prev) => {
+        const trimmed = prev.trim()
+        return trimmed ? prev : fallbackLollipopMMSS
+      })
       
       // Salva automaticamente no banco se a opção estiver marcada
       if (saveToDb) {
         try {
           // Se não for Siege, aplica overrides do que foi editado nos campos mm:ss
-          let overrides: any = {}
-          if (territorio !== 'Siege') {
-            const tn = parseMMSS(totalNodeMMSS)
-            const lo = parseMMSS(lollipopMMSS)
-            if (tn != null) overrides.totalNodeSeconds = tn
-            if (lo != null) overrides.lollipopOccupancySeconds = lo
+          const overrides: any = {
+            isWin,
+            winReason: winReason.trim() || undefined,
           }
-          overrides.isWin = isWin
-          overrides.winReason = winReason.trim() || undefined
-          await saveToDatabase({ ...data, ...overrides, event_date: eventDate ? new Date(eventDate).toISOString() : undefined } as any, file.name)
+          if (territorio !== 'Siege') {
+            if (manualTotalSeconds != null)
+              overrides.totalNodeSeconds = manualTotalSeconds
+            if (manualLollipopSeconds != null)
+              overrides.lollipopOccupancySeconds = manualLollipopSeconds
+          }
+          await saveToDatabase({ ...processedWithManual, ...overrides, event_date: eventDate ? new Date(eventDate).toISOString() : undefined } as any, file.name)
           setSaveSuccess(true)
           setSaveError(null)
         } catch (saveError) {
