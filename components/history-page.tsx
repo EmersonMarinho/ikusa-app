@@ -1623,21 +1623,26 @@ export function HistoryPage() {
                             <p className="text-sm text-neutral-400">
                               {record.guilds ? `${record.guilds.length} guilda(s)` : record.guild}
                             </p>
-                            {/* Território e Node */}
-                            <div className="flex items-center space-x-2 mt-1">
-                              {record.territorio && (
-                                <Badge variant="outline" className="border-blue-700 text-blue-300 text-xs">
-                                  <MapIcon className="h-3 w-3 mr-1" />
-                                  {record.territorio}
-                                </Badge>
-                              )}
-                              {record.node && (
-                                <Badge variant="outline" className="border-green-700 text-green-300 text-xs">
-                                  <FlagIcon className="h-3 w-3 mr-1" />
-                                  {record.node}
-                                </Badge>
-                              )}
-                            </div>
+                            {(() => {
+                              const isWin = Boolean(record?.is_win ?? record?.isWin ?? false)
+                              const winReason = record?.win_reason ?? record?.winReason ?? ''
+                              const baseClasses = isWin
+                                ? 'bg-green-500/15 text-green-200 border border-green-400/30'
+                                : 'bg-red-500/15 text-red-200 border border-red-400/30'
+                              return (
+                                <div className="mt-2 flex flex-wrap items-center gap-2">
+                                  <span className={`inline-flex items-center gap-2 px-2.5 py-1 rounded-full text-xs font-semibold uppercase tracking-wide ${baseClasses}`}>
+                                    <span className={`h-2 w-2 rounded-full ${isWin ? 'bg-green-400' : 'bg-red-400'}`}></span>
+                                    {isWin ? 'Vitória' : 'Derrota'}
+                                  </span>
+                                  {winReason && (
+                                    <span className="text-xs text-neutral-400 italic truncate max-w-sm">
+                                      {winReason}
+                                    </span>
+                                  )}
+                                </div>
+                              )
+                            })()}
                           </div>
                         </div>
                         <div className="flex items-center gap-1">

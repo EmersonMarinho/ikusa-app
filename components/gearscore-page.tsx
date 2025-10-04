@@ -22,7 +22,8 @@ import {
   UploadIcon,
   FileTextIcon,
   CheckCircleIcon,
-  AlertCircleIcon
+  AlertCircleIcon,
+  Copy
 } from "lucide-react"
 import { Label } from "@/components/ui/label"
 import { isDefensePlayer, computeGearscore } from "@/lib/player-filters"
@@ -115,6 +116,7 @@ export function GearscorePageComponent() {
   const [prevGuildAverages, setPrevGuildAverages] = useState<Record<string, { totalPlayers: number; averageGS: number }>>({})
   const [guildFilter, setGuildFilter] = useState<'all' | 'Manifest' | 'Allyance' | 'Grand_Order'>('all')
   const [classFilter, setClassFilter] = useState<'all' | string>('all')
+  const [lastUpdatedFilter, setLastUpdatedFilter] = useState<'all' | '14' | '30' | '60' | '90' | '180' | '365' | 'never'>('all')
   const availableClasses = Array.from(new Set(players.map(p => p.main_class))).sort()
   const [showAllEvolutions, setShowAllEvolutions] = useState<boolean>(false)
   
@@ -126,6 +128,7 @@ export function GearscorePageComponent() {
   const [isPreviewing, setIsPreviewing] = useState(false)
   const [previewResult, setPreviewResult] = useState<UploadPreviewResult | null>(null)
   const [showPreviewModal, setShowPreviewModal] = useState<null | 'inserted' | 'skipped'>(null)
+  const [copying, setCopying] = useState(false)
 
   // Utilitário: copiar texto para a área de transferência
   const copyText = async (text: string) => {
@@ -371,7 +374,21 @@ export function GearscorePageComponent() {
       player.character_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       player.main_class.toLowerCase().includes(searchTerm.toLowerCase())
     if (!matchesSearch) return false
+
     if (classFilter !== 'all' && player.main_class !== classFilter) return false
+
+    if (lastUpdatedFilter !== 'all') {
+      if (lastUpdatedFilter === 'never') {
+        const hasValidUpdate = player.last_updated && !Number.isNaN(Date.parse(player.last_updated))
+        if (hasValidUpdate) return false
+      } else {
+        const days = Number(lastUpdatedFilter)
+        const cutoff = Date.now() - days * 86400000
+        const updatedAt = Date.parse(player.last_updated)
+        if (!Number.isFinite(updatedAt) || updatedAt > cutoff) return false
+      }
+    }
+
     if (guildFilter === 'all') return true
     const g = familyToGuild[player.family_name?.toLowerCase?.() || '']
     return g === guildFilter
@@ -449,6 +466,28 @@ export function GearscorePageComponent() {
     if (guild === 'Allyance') return 'border-green-700 text-green-300'
     if (guild === 'Grand_Order') return 'border-purple-700 text-purple-300'
     return 'border-yellow-700 text-yellow-300'
+  }
+
+  const handleCopyFilteredPlayers = async () => {
+    if (copying) return
+    setCopying(true)
+    try {
+      if (filteredPlayers.length === 0) {
+        alert('Nenhum player para copiar no filtro atual.')
+        return
+      }
+      const lines = filteredPlayers
+        .map(player => `${player.family_name} (${player.character_name})`)
+        .join('\n')
+      const ok = await copyText(lines)
+      if (!ok) {
+        alert('Não foi possível copiar os nomes. Copie manualmente.')
+      } else {
+        alert(`Copiado ${filteredPlayers.length} nome(s).`)
+      }
+    } finally {
+      setCopying(false)
+    }
   }
 
   if (loading && players.length === 0) {
@@ -1053,6 +1092,22 @@ export function GearscorePageComponent() {
                       </SelectContent>
                     </Select>
 
+                    <Select value={lastUpdatedFilter} onValueChange={(v: any) => setLastUpdatedFilter(v)}>
+                      <SelectTrigger className="w-60">
+                        <SelectValue placeholder="Filtrar por última atualização" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">Qualquer data</SelectItem>
+                        <SelectItem value="14">Há 14 dias ou mais</SelectItem>
+                        <SelectItem value="30">Há 30 dias ou mais</SelectItem>
+                        <SelectItem value="60">Há 60 dias ou mais</SelectItem>
+                        <SelectItem value="90">Há 90 dias ou mais</SelectItem>
+                        <SelectItem value="180">Há 180 dias ou mais</SelectItem>
+                        <SelectItem value="365">Há 365 dias ou mais</SelectItem>
+                        <SelectItem value="never">Sem data registrada</SelectItem>
+                      </SelectContent>
+                    </Select>
+
                     <Button onClick={fetchPlayers} variant="outline">
                       <RefreshCw className="h-4 w-4 mr-2" />
                       Atualizar
@@ -1070,6 +1125,18 @@ export function GearscorePageComponent() {
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
+              <div className="flex justify-end mb-3">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleCopyFilteredPlayers}
+                  disabled={copying}
+                  className="flex items-center gap-2"
+                >
+                  <Copy className={`h-4 w-4 ${copying ? 'animate-pulse' : ''}`} />
+                  {copying ? 'Copiando...' : 'Copiar nomes filtrados'}
+                </Button>
+              </div>
                   <div className="rounded-md border">
                     <Table>
                       <TableHeader>
