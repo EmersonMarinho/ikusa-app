@@ -2113,7 +2113,7 @@ export function HistoryPage() {
                         {playerDetailModal && (
                           <PlayerStreakModal
                             open={!!playerDetailModal}
-                            onOpenChange={(v) => {
+                            onOpenChange={(v: boolean) => {
                               if (!v) setPlayerDetailModal(null)
                             }}
                             nick={playerDetailModal.nick}
