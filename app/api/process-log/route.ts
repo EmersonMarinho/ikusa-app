@@ -130,6 +130,14 @@ export async function POST(request: NextRequest) {
     const file = formData.get('file') as File;
     const territorio = formData.get('territorio') as string;
     const node = formData.get('node') as string;
+    const rawEventDate = formData.get('event_date') || formData.get('eventDate') || formData.get('eventData');
+    const eventDateIso = (() => {
+      if (typeof rawEventDate === 'string' && rawEventDate.trim()) {
+        const parsed = new Date(rawEventDate);
+        if (!isNaN(parsed.getTime())) return parsed.toISOString();
+      }
+      return new Date().toISOString();
+    })();
     const slowMode = ['1','true','on'].includes(String(formData.get('slowMode') || '').toLowerCase());
     const isWinRaw = formData.get('isWin')
     const winReason = String(formData.get('winReason') || '').trim() || undefined
@@ -510,7 +518,32 @@ export async function POST(request: NextRequest) {
     }));
     const totalGeral = totalPorClasse.reduce((acc, c) => acc + c.count, 0);
 
-    const response = {
+    const gsSnapshot: Record<string, { class: string; family: string; gearscore: number; ap: number; aap: number; dp: number; lastUpdated: string | null }> = {}
+    try {
+      const resGS = await fetch(`/api/players-gearscore?guild=lollipop&limit=0&asOf=${encodeURIComponent(eventDateIso)}&closest=1&windowDays=7&skipAllianceFilter=1`, { cache: 'no-store' as RequestCache })
+      const jsonGS = await resGS.json()
+      if (jsonGS?.success && Array.isArray(jsonGS.data?.players)) {
+        const players = jsonGS.data.players as Array<{ family_name: string; main_class: string; gearscore: number; ap: number; aap: number; dp: number; last_updated: string }>
+        const normalizeName = (str: string) => String(str || '').trim().toLowerCase()
+        for (const p of players) {
+          const key = normalizeName(p.family_name)
+          if (!key) continue
+          gsSnapshot[key] = {
+            class: p.main_class,
+            family: p.family_name,
+            gearscore: Number(p.gearscore) || 0,
+            ap: Number(p.ap) || 0,
+            aap: Number(p.aap) || 0,
+            dp: Number(p.dp) || 0,
+            lastUpdated: p.last_updated || null,
+          }
+        }
+      }
+    } catch (err) {
+      console.error('Erro ao buscar snapshot de GS para Lollipop:', err)
+    }
+
+    return NextResponse.json({
       guild: 'Lollipop',
       guilds,
       totalGeral,
@@ -525,16 +558,14 @@ export async function POST(request: NextRequest) {
       node,
       guildasAdversarias: guilds.filter(g => g !== 'Lollipop'),
       detectedGuilds: allDetectedGuilds,
-      // Estatísticas individuais por jogador (como nos scripts do usuário)
+      eventDate: eventDateIso,
       playerStatsByGuild,
-      // Tempos
       totalNodeSeconds,
       lollipopOccupancySeconds: occupancyByGuild['Lollipop'] || 0,
       isWin,
       winReason,
-    };
-
-    return NextResponse.json(response);
+      lollipopGearSnapshot: Object.keys(gsSnapshot).length ? gsSnapshot : undefined,
+    });
   } catch (error) {
     console.error('Erro ao processar log:', error);
     return NextResponse.json({ error: 'Erro interno do servidor' }, { status: 500 });

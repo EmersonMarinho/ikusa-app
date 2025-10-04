@@ -50,7 +50,6 @@ export function ChernobylMonitorPage() {
 
       // 2) Processa cada perfil com progresso
       const players: ScraperPlayer[] = []
-      const delay = (ms: number) => new Promise(r => setTimeout(r, ms))
       const fetchWithRetry = async (l: { nome: string; url: string }, attempts = 3): Promise<ScraperPlayer> => {
         for (let t = 0; t < attempts; t++) {
           try {
@@ -60,7 +59,6 @@ export function ChernobylMonitorPage() {
           } catch {
             // continua
           }
-          await delay(400)
         }
         return { nome: l.nome, url: l.url, papd_maximo: null, perfil_privado: true }
       }
@@ -69,8 +67,6 @@ export function ChernobylMonitorPage() {
         const profile = await fetchWithRetry(l, 3)
         players.push(profile)
         setProgress(prev => ({ done: prev.done + 1, total: links.length }))
-        // pequeno atraso para evitar rate limit
-        await delay(200)
       }
 
       const data: ScraperGuildResult = {

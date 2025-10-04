@@ -42,6 +42,15 @@ export interface ProcessLogRecord {
   // Vitória/Derrota
   is_win?: boolean | null
   win_reason?: string | null
+  lollipop_gear_snapshot?: Record<string, {
+    class: string
+    family: string
+    gearscore: number
+    ap: number
+    aap: number
+    dp: number
+    lastUpdated: string | null
+  }> | null
 }
 
 // Função para inserir log processado
