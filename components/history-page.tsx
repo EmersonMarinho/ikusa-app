@@ -33,6 +33,7 @@ import {
   MapIcon,
   FlagIcon,
   RefreshCw,
+  TimerIcon,
 } from "lucide-react"
 import { Share2Icon, Link2Icon } from "lucide-react"
 import { useToast } from "@/components/ui/use-toast"
@@ -139,9 +140,18 @@ export function HistoryPage() {
   const [chernLoading, setChernLoading] = useState(false)
   const [chernError, setChernError] = useState<string | null>(null)
   const [chernGuildAvg, setChernGuildAvg] = useState<number>(0)
+  const [playerDetailModal, setPlayerDetailModal] = useState<null | {
+    nick: string
+    familia: string
+    events: Array<{ t?: number; type: 'kill' | 'death'; opponentNick?: string; opponentGuild?: string }>
+    opponentFamilyByKey?: Record<string, string>
+    opponentFamilyByNick?: Record<string, string>
+    opponentClassByKey?: Record<string, string>
+    opponentClassByNick?: Record<string, string>
+  }>(null)
   const presentEstimatedAvg = useMemo(() => {
     const visibleVals = chernGearscore.filter(p => p?.papd_maximo != null).map(p => Number(p.papd_maximo))
-    const privateCount = chernGearscore.filter(p => p?.papd_maximo == null || p?.perfil_privado).length
+    const privateCount = chernGearscore.filter(p => p?.perfil_privado).length
     const totalCount = visibleVals.length + privateCount
     if (totalCount === 0) return 0
     const assumedPrivate = 830 // cenário solicitado
@@ -1428,251 +1438,292 @@ export function HistoryPage() {
 
       {/* Daily Statistics */}
       <div className="space-y-6">
-        {dayStats.map((dayStat) => (
-          <Card key={dayStat.date} className="border-neutral-800 bg-neutral-900">
-            <CardHeader>
-              <div className="flex items-center justify-between">
-                <div className="flex items-center space-x-3">
-                  <CalendarIcon className="h-5 w-5 text-blue-400" />
-                  <div>
-                    <CardTitle className="text-neutral-100">{formatRelativeDay(dayStat.date)}</CardTitle>
-                    <p className="text-sm text-neutral-400">
-                      {dayStat.recordCount} registro(s)
-                    </p>
+        {dayStats.map((dayStat) => {
+          const dayTotals = filteredRecords.filter((record) => {
+            const recordDate = (() => {
+              let targetDate: string | null = null
+              if (record.created_at) targetDate = record.created_at
+              else if (record.event_date) targetDate = record.event_date
+              else if (record.date) targetDate = record.date
+              if (!targetDate) return null
+              return toLocalYMD(targetDate)
+            })()
+            return recordDate === dayStat.date
+          })
+
+          const totalNodeSecondsDay = dayTotals.reduce((acc: number, record: any) => acc + Number(record.total_node_seconds ?? record.totalNodeSeconds ?? 0), 0)
+          const lollipopSecondsDay = dayTotals.reduce((acc: number, record: any) => acc + Number(record.lollipop_occupancy_seconds ?? record.lollipopOccupancySeconds ?? 0), 0)
+          const otherSecondsDay = Math.max(0, totalNodeSecondsDay - lollipopSecondsDay)
+          const lollipopDayPct = totalNodeSecondsDay > 0 ? Math.round((lollipopSecondsDay / totalNodeSecondsDay) * 1000) / 10 : 0
+          const otherDayPct = totalNodeSecondsDay > 0 ? Math.round((otherSecondsDay / totalNodeSecondsDay) * 1000) / 10 : 0
+          const hasDayNodeStats = totalNodeSecondsDay > 0
+
+          return (
+            <Card key={dayStat.date} className="border-neutral-800 bg-neutral-900">
+              <CardHeader>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center space-x-3">
+                    <CalendarIcon className="h-5 w-5 text-blue-400" />
+                    <div>
+                      <CardTitle className="text-neutral-100">{formatRelativeDay(dayStat.date)}</CardTitle>
+                      <p className="text-sm text-neutral-400">
+                        {dayStat.recordCount} registro(s)
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <Badge variant="secondary" className="bg-blue-900/50 text-blue-300">
+                      {dayStat.guilds.length} guilda(s)
+                    </Badge>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => toggleKillStats(dayStat.date)}
+                      className="text-neutral-400 hover:text-neutral-200"
+                    >
+                      {showKillStats[dayStat.date] ? (
+                        <ChevronUpIcon className="h-4 w-4" />
+                      ) : (
+                        <ChevronDownIcon className="h-4 w-4" />
+                      )}
+                    </Button>
                   </div>
                 </div>
-                <div className="flex items-center space-x-2">
-                  <Badge variant="secondary" className="bg-blue-900/50 text-blue-300">
-                    {dayStat.guilds.length} guilda(s)
-                  </Badge>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => toggleKillStats(dayStat.date)}
-                    className="text-neutral-400 hover:text-neutral-200"
-                  >
-                    {showKillStats[dayStat.date] ? (
-                      <ChevronUpIcon className="h-4 w-4" />
-                    ) : (
-                      <ChevronDownIcon className="h-4 w-4" />
-                    )}
-                  </Button>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {/* Território e Node */}
+                <div className="flex flex-wrap gap-2">
+                  {Array.from(dayStat.territorios).map((territorio) => (
+                    <Badge key={territorio} variant="outline" className="border-blue-700 text-blue-300">
+                      <MapIcon className="h-3 w-3 mr-1" />
+                      {territorio}
+                    </Badge>
+                  ))}
+                  {Array.from(dayStat.nodes).map((node) => (
+                    <Badge key={node} variant="outline" className="border-purple-600 text-purple-300">
+                      <FlagIcon className="h-3 w-3 mr-1 text-purple-300" />
+                      {node}
+                    </Badge>
+                  ))}
                 </div>
-              </div>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {/* Território e Node */}
-              <div className="flex flex-wrap gap-2">
-                {Array.from(dayStat.territorios).map((territorio) => (
-                  <Badge key={territorio} variant="outline" className="border-blue-700 text-blue-300">
-                    <MapIcon className="h-3 w-3 mr-1" />
-                    {territorio}
-                  </Badge>
-                ))}
-                {Array.from(dayStat.nodes).map((node) => (
-                  <Badge key={node} variant="outline" className="border-green-700 text-green-300">
-                    <FlagIcon className="h-3 w-3 mr-1" />
-                    {node}
-                  </Badge>
-                ))}
-              </div>
 
-              {/* Guild Summary */}
-              <div className="flex flex-wrap gap-2">
-                {dayStat.guilds.map((guild) => (
-                  <Badge key={guild} variant="outline" className={`${getGuildBadgeClasses(guild)}`}>
-                    {guild}
-                  </Badge>
-                ))}
-              </div>
-
-              {/* Kill/Death Statistics */}
-              {showKillStats[dayStat.date] && (
-                <div className="space-y-4 pt-4 border-t border-neutral-700">
-                  {/* Kill Stats */}
-                  {dayStat.killStats && Object.keys(dayStat.killStats).length > 0 && (
-                    <div>
-                      <h4 className="text-sm font-medium text-neutral-300 mb-2 flex items-center">
-                        <SwordIcon className="h-4 w-4 mr-2 text-green-400" />
-                        Estatísticas de Kills
-                      </h4>
-                      <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-                        {Object.entries(dayStat.killStats).map(([guild, kills]) => (
-                          <div key={guild} className={`rounded p-3 ${getGuildBadgeClasses(guild)}`}>
-                            <div className="text-sm font-medium">{guild}</div>
-                            <div className="text-lg font-semibold text-green-400">{kills}</div>
-                          </div>
-                        ))}
-                      </div>
+                {/* Guild Summary + Ocupação */}
+                <div className="flex flex-wrap items-center justify-between gap-3 border-t border-neutral-800 pt-3">
+                  <div className="flex flex-wrap gap-2">
+                    {dayStat.guilds.map((guild) => (
+                      <Badge key={guild} variant="outline" className={`${getGuildBadgeClasses(guild)}`}>
+                        {guild}
+                      </Badge>
+                    ))}
+                  </div>
+                  {hasDayNodeStats && (
+                    <div className="flex items-center gap-3 text-xs text-neutral-300">
+                      <span className="inline-flex items-center gap-2 px-2.5 py-1 rounded-full bg-green-500/10 border border-green-500/30 text-green-200">
+                        Lollipop {lollipopDayPct}%
+                        <span className="flex items-center gap-1 text-neutral-400">
+                          <TimerIcon className="h-3 w-3 text-green-300" />
+                          {formatSecondsToMMSS(lollipopSecondsDay)}
+                        </span>
+                      </span>
+                      <span className="inline-flex items-center gap-2 px-2.5 py-1 rounded-full bg-red-500/10 border border-red-500/30 text-red-200">
+                        Outras {otherDayPct}%
+                        <span className="flex items-center gap-1 text-neutral-400">
+                          <TimerIcon className="h-3 w-3 text-red-300" />
+                          {formatSecondsToMMSS(otherSecondsDay)}
+                        </span>
+                      </span>
                     </div>
                   )}
+                </div>
 
-                  {/* Death Stats */}
-                  {dayStat.deathStats && Object.keys(dayStat.deathStats).length > 0 && (
-                    <div>
-                      <h4 className="text-sm font-medium text-neutral-300 mb-2 flex items-center">
-                        <SkullIcon className="h-4 w-4 mr-2 text-red-400" />
-                        Estatísticas de Deaths
-                      </h4>
-                      <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-                        {Object.entries(dayStat.deathStats).map(([guild, deaths]) => (
-                          <div key={guild} className={`rounded p-3 ${getGuildBadgeClasses(guild)}`}>
-                            <div className="text-sm font-medium">{guild}</div>
-                            <div className="text-lg font-semibold text-red-400">{deaths}</div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* KD Ratio Stats */}
-                  {dayStat.kdStats && Object.keys(dayStat.kdStats).length > 0 && (
-                    <div>
-                      <h4 className="text-sm font-medium text-neutral-300 mb-2 flex items-center">
-                        <TargetIcon className="h-4 w-4 mr-2 text-blue-400" />
-                        KD Ratio
-                      </h4>
-                      <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-                        {Object.entries(dayStat.kdStats).map(([guild, kd]) => (
-                          <div key={guild} className={`rounded p-3 ${getGuildBadgeClasses(guild)}`}>
-                            <div className="text-sm font-medium">{guild}</div>
-                            <div className={`text-lg font-semibold ${kd >= 1 ? 'text-green-400' : 'text-red-400'}`}>
-                              {kd.toFixed(2)}
+                {/* Kill/Death Statistics */}
+                {showKillStats[dayStat.date] && (
+                  <div className="space-y-4 pt-4 border-t border-neutral-700">
+                    {/* Kill Stats */}
+                    {dayStat.killStats && Object.keys(dayStat.killStats).length > 0 && (
+                      <div>
+                        <h4 className="text-sm font-medium text-neutral-300 mb-2 flex items-center">
+                          <SwordIcon className="h-4 w-4 mr-2 text-green-400" />
+                          Estatísticas de Kills
+                        </h4>
+                        <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                          {Object.entries(dayStat.killStats).map(([guild, kills]) => (
+                            <div key={guild} className={`rounded p-3 ${getGuildBadgeClasses(guild)}`}>
+                              <div className="text-sm font-medium">{guild}</div>
+                              <div className="text-lg font-semibold text-green-400">{kills}</div>
                             </div>
-                          </div>
-                        ))}
+                          ))}
+                        </div>
                       </div>
-                    </div>
-                  )}
+                    )}
 
-                  {/* Kills Matrix */}
-                  {dayStat.killsMatrix && Object.keys(dayStat.killsMatrix).length > 0 && (
-                    <div>
-                      <h4 className="text-sm font-medium text-neutral-300 mb-2">Matriz de Kills</h4>
-                      <div className="overflow-x-auto">
-                        <table className="w-full text-sm">
-                          <thead>
-                            <tr className="border-b border-neutral-700">
-                              <th className="text-left p-2 text-neutral-400">Killer</th>
-                              {dayStat.killsMatrix && Object.keys(dayStat.killsMatrix).map((guild) => (
-                                <th key={guild} className={`text-center p-2 ${getGuildBadgeClasses(guild)}`}>
-                                  {guild}
-                                </th>
-                              ))}
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {dayStat.killsMatrix && Object.entries(dayStat.killsMatrix).map(([killer, victims]) => (
-                              <tr key={killer} className="border-b border-neutral-800">
-                                <td className={`p-2 font-medium ${getGuildBadgeClasses(killer)}`}>{killer}</td>
-                                {dayStat.killsMatrix && Object.keys(dayStat.killsMatrix).map((victim) => (
-                                  <td key={victim} className="text-center p-2">
-                                    <span className="text-neutral-200">
-                                      {victims[victim] || 0}
-                                    </span>
-                                  </td>
+                    {/* Death Stats */}
+                    {dayStat.deathStats && Object.keys(dayStat.deathStats).length > 0 && (
+                      <div>
+                        <h4 className="text-sm font-medium text-neutral-300 mb-2 flex items-center">
+                          <SkullIcon className="h-4 w-4 mr-2 text-red-400" />
+                          Estatísticas de Deaths
+                        </h4>
+                        <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                          {Object.entries(dayStat.deathStats).map(([guild, deaths]) => (
+                            <div key={guild} className={`rounded p-3 ${getGuildBadgeClasses(guild)}`}>
+                              <div className="text-sm font-medium">{guild}</div>
+                              <div className="text-lg font-semibold text-red-400">{deaths}</div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* KD Ratio Stats */}
+                    {dayStat.kdStats && Object.keys(dayStat.kdStats).length > 0 && (
+                      <div>
+                        <h4 className="text-sm font-medium text-neutral-300 mb-2 flex items-center">
+                          <TargetIcon className="h-4 w-4 mr-2 text-blue-400" />
+                          KD Ratio
+                        </h4>
+                        <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                          {Object.entries(dayStat.kdStats).map(([guild, kd]) => (
+                            <div key={guild} className={`rounded p-3 ${getGuildBadgeClasses(guild)}`}>
+                              <div className="text-sm font-medium">{guild}</div>
+                              <div className={`text-lg font-semibold ${kd >= 1 ? 'text-green-400' : 'text-red-400'}`}>
+                                {kd.toFixed(2)}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Kills Matrix */}
+                    {dayStat.killsMatrix && Object.keys(dayStat.killsMatrix).length > 0 && (
+                      <div>
+                        <h4 className="text-sm font-medium text-neutral-300 mb-2">Matriz de Kills</h4>
+                        <div className="overflow-x-auto">
+                          <table className="w-full text-sm">
+                            <thead>
+                              <tr className="border-b border-neutral-700">
+                                <th className="text-left p-2 text-neutral-400">Killer</th>
+                                {dayStat.killsMatrix && Object.keys(dayStat.killsMatrix).map((guild) => (
+                                  <th key={guild} className={`text-center p-2 ${getGuildBadgeClasses(guild)}`}>
+                                    {guild}
+                                  </th>
                                 ))}
                               </tr>
-                            ))}
-                          </tbody>
-                        </table>
+                            </thead>
+                            <tbody>
+                              {dayStat.killsMatrix && Object.entries(dayStat.killsMatrix).map(([killer, victims]) => (
+                                <tr key={killer} className="border-b border-neutral-800">
+                                  <td className={`p-2 font-medium ${getGuildBadgeClasses(killer)}`}>{killer}</td>
+                                  {dayStat.killsMatrix && Object.keys(dayStat.killsMatrix).map((victim) => (
+                                    <td key={victim} className="text-center p-2">
+                                      <span className="text-neutral-200">
+                                        {victims[victim] || 0}
+                                      </span>
+                                    </td>
+                                  ))}
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
                       </div>
-                    </div>
-                  )}
-                </div>
-              )}
+                    )}
+                  </div>
+                )}
 
-              {/* Records List */}
-              <div className="space-y-3 pt-4 border-t border-neutral-700">
-                <h4 className="text-sm font-medium text-neutral-300">Registros do Dia</h4>
-                <div className="space-y-2">
-                  {(() => {
-                    const dayRecords = filteredRecords.filter((record) => {
-                      // Usa a mesma lógica de processamento de data
-                      const recordDate = (() => {
-                        let targetDate: string | null = null
-                        if (record.created_at) targetDate = record.created_at
-                        else if (record.event_date) targetDate = record.event_date
-                        else if (record.date) targetDate = record.date
-                        if (!targetDate) return null
-                        return toLocalYMD(targetDate)
-                      })()
+                {/* Records List */}
+                <div className="space-y-3 pt-4 border-t border-neutral-700">
+                  <h4 className="text-sm font-medium text-neutral-300">Registros do Dia</h4>
+                  <div className="space-y-2">
+                    {(() => {
+                      const dayRecords = filteredRecords.filter((record) => {
+                        // Usa a mesma lógica de processamento de data
+                        const recordDate = (() => {
+                          let targetDate: string | null = null
+                          if (record.created_at) targetDate = record.created_at
+                          else if (record.event_date) targetDate = record.event_date
+                          else if (record.date) targetDate = record.date
+                          if (!targetDate) return null
+                          return toLocalYMD(targetDate)
+                        })()
+                        
+                        return recordDate === dayStat.date
+                      })
                       
-                      return recordDate === dayStat.date
-                    })
-                    
-                    console.log(`📅 Registros para ${dayStat.date}:`, dayRecords.length)
-                    console.log(`📅 Dados dos registros:`, dayRecords.map(r => ({
-                      id: r.id,
-                      arquivo_nome: r.arquivo_nome,
-                      guild: r.guild,
-                      guilds: r.guilds,
-                      created_at: r.created_at,
-                      event_date: r.event_date
-                    })))
-                    
-                    return dayRecords.map((record) => (
-                      <div
-                        key={record.id}
-                        className="flex items-center justify-between bg-neutral-800 rounded-lg p-3 hover:bg-neutral-750 transition-colors"
-                      >
-                        <div className="flex items-center space-x-3">
-                          <FileTextIcon className="h-5 w-5 text-blue-400" />
-                          <div>
-                            <p className="text-neutral-200 font-medium">{record.arquivo_nome || record.filename}</p>
-                            <p className="text-sm text-neutral-400">
-                              {record.guilds ? `${record.guilds.length} guilda(s)` : record.guild}
-                            </p>
-                            {(() => {
-                              const isWin = Boolean(record?.is_win ?? record?.isWin ?? false)
-                              const winReason = record?.win_reason ?? record?.winReason ?? ''
-                              const baseClasses = isWin
-                                ? 'bg-green-500/15 text-green-200 border border-green-400/30'
-                                : 'bg-red-500/15 text-red-200 border border-red-400/30'
-                              return (
-                                <div className="mt-2 flex flex-wrap items-center gap-2">
-                                  <span className={`inline-flex items-center gap-2 px-2.5 py-1 rounded-full text-xs font-semibold uppercase tracking-wide ${baseClasses}`}>
-                                    <span className={`h-2 w-2 rounded-full ${isWin ? 'bg-green-400' : 'bg-red-400'}`}></span>
-                                    {isWin ? 'Vitória' : 'Derrota'}
-                                  </span>
-                                  {winReason && (
-                                    <span className="text-xs text-neutral-400 italic truncate max-w-sm">
-                                      {winReason}
+                      console.log(`📅 Registros para ${dayStat.date}:`, dayRecords.length)
+                      console.log(`📅 Dados dos registros:`, dayRecords.map(r => ({
+                        id: r.id,
+                        arquivo_nome: r.arquivo_nome,
+                        guild: r.guild,
+                        guilds: r.guilds,
+                        created_at: r.created_at,
+                        event_date: r.event_date
+                      })))
+                      
+                      return dayRecords.map((record) => (
+                        <div
+                          key={record.id}
+                          className="flex items-center justify-between bg-neutral-800 rounded-lg p-3 hover:bg-neutral-750 transition-colors"
+                        >
+                          <div className="flex items-center space-x-3">
+                            <FileTextIcon className="h-5 w-5 text-blue-400" />
+                            <div>
+                              <p className="text-neutral-200 font-medium">{record.arquivo_nome || record.filename}</p>
+                              <p className="text-sm text-neutral-400">
+                                {record.guilds ? `${record.guilds.length} guilda(s)` : record.guild}
+                              </p>
+                              {(() => {
+                                const isWin = Boolean(record?.is_win ?? record?.isWin ?? false)
+                                const winReason = record?.win_reason ?? record?.winReason ?? ''
+                                const baseClasses = isWin
+                                  ? 'bg-green-500/15 text-green-200 border border-green-400/30'
+                                  : 'bg-red-500/15 text-red-200 border border-red-400/30'
+                                return (
+                                  <div className="mt-2 flex flex-wrap items-center gap-2">
+                                    <span className={`inline-flex items-center gap-2 px-2.5 py-1 rounded-full text-xs font-semibold uppercase tracking-wide ${baseClasses}`}>
+                                      <span className={`h-2 w-2 rounded-full ${isWin ? 'bg-green-400' : 'bg-red-400'}`}></span>
+                                      {isWin ? 'Vitória' : 'Derrota'}
                                     </span>
-                                  )}
-                                </div>
-                              )
-                            })()}
+                                    {winReason && (
+                                      <span className="text-xs text-neutral-400 italic truncate max-w-sm">
+                                        {winReason}
+                                      </span>
+                                    )}
+                                  </div>
+                                )
+                              })()}
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-1">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => copyShareLink(record.id)}
+                              className="text-neutral-400 hover:text-neutral-200"
+                              title="Compartilhar"
+                            >
+                              <Share2Icon className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => viewCompleteRecord(record.id)}
+                              className="text-neutral-400 hover:text-neutral-200"
+                            >
+                              <EyeIcon className="h-4 w-4 mr-2" />
+                              Ver
+                            </Button>
                           </div>
                         </div>
-                        <div className="flex items-center gap-1">
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => copyShareLink(record.id)}
-                            className="text-neutral-400 hover:text-neutral-200"
-                            title="Compartilhar"
-                          >
-                            <Share2Icon className="h-4 w-4" />
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => viewCompleteRecord(record.id)}
-                            className="text-neutral-400 hover:text-neutral-200"
-                          >
-                            <EyeIcon className="h-4 w-4 mr-2" />
-                            Ver
-                          </Button>
-                        </div>
-                      </div>
-                    ))
-                  })()}
+                      ))
+                    })()}
+                  </div>
                 </div>
-              </div>
-            </CardContent>
-          </Card>
-        ))}
+              </CardContent>
+            </Card>
+          )
+        })}
       </div>
 
       {/* Complete Record View Modal */}
@@ -1736,7 +1787,6 @@ export function HistoryPage() {
                         <TabsTrigger value="gs-lollipop">GS Lollipop</TabsTrigger>
                         <TabsTrigger value="gs-chernobyl">GS Chernobyl</TabsTrigger>
                         <TabsTrigger value="tempo-pino">Tempo de Pino</TabsTrigger>
-                        <TabsTrigger value="streak">Streak</TabsTrigger>
                       </TabsList>
 
                       <TabsContent value="resumo" className="space-y-6 mt-4">
@@ -1868,89 +1918,6 @@ export function HistoryPage() {
                         </div>
                       </TabsContent>
 
-                      <TabsContent value="streak" className="mt-4 space-y-4">
-                        {(() => {
-                          const statsGuild = (processedData.playerStatsByGuild || processedData.player_stats_by_guild || {}) as any
-                          const lollipop = (statsGuild['Lollipop'] || {}) as Record<string, any>
-
-                          // Mapa auxiliar para exibir família do oponente
-                          const opponentFamilyByKey: Record<string, string> = {}
-                          const opponentFamilyByNick: Record<string, string> = {}
-                          const opponentClassByKey: Record<string, string> = {}
-                          const opponentClassByNick: Record<string, string> = {}
-                          try {
-                            // Preenche a partir de todas as guildas conhecidas no registro
-                            for (const [gName, byNick] of Object.entries(statsGuild as any)) {
-                              for (const [n, st] of Object.entries((byNick as any) || {})) {
-                                const fam = String((st as any)?.familia || '').trim()
-                                const cls = String((st as any)?.classe || '').trim()
-                                if (fam) {
-                                  opponentFamilyByKey[`${gName}::${n}`] = fam
-                                  if (!opponentFamilyByNick[n]) opponentFamilyByNick[n] = fam
-                                }
-                                if (cls) {
-                                  opponentClassByKey[`${gName}::${n}`] = cls
-                                  if (!opponentClassByNick[n]) opponentClassByNick[n] = cls
-                                }
-                              }
-                            }
-                          } catch {}
-
-                          // Extrai eventos quando disponíveis e calcula streaks
-                          type Event = { t?: number; type: 'kill' | 'death'; opponentNick?: string; opponentGuild?: string }
-
-                          function computeStreakMetrics(events: Event[]) {
-                            if (!events || events.length === 0) {
-                              return { best: 0, avg: 0, last: 0, streaks: [] as number[] }
-                            }
-                            const ordered = [...events].sort((a, b) => {
-                              const ta = (a as any).tick ?? a.t ?? 0
-                              const tb = (b as any).tick ?? b.t ?? 0
-                              return ta - tb
-                            })
-                            const streaks: number[] = []
-                            let cur = 0
-                            for (const ev of ordered) {
-                              if (ev.type === 'kill') {
-                                cur += 1
-                              } else if (ev.type === 'death') {
-                                if (cur > 0) streaks.push(cur)
-                                cur = 0
-                              }
-                            }
-                            // Caso termine sem morte
-                            if (cur > 0) streaks.push(cur)
-                            const best = streaks.length ? Math.max(...streaks) : 0
-                            const avg = streaks.length ? (streaks.reduce((a, b) => a + b, 0) / streaks.length) : 0
-                            const last = streaks.length ? streaks[streaks.length - 1] : 0
-                            return { best, avg, last, streaks }
-                          }
-
-                          const rows = Object.entries(lollipop).map(([nick, st]) => {
-                            const familia = (st as any).familia || ''
-                            const kills = Number((st as any).kills || 0)
-                            const deaths = Number((st as any).deaths || 0)
-                            const events = Array.isArray((st as any).events) ? (st as any).events as Event[] : []
-                            const hasEvents = events.length > 0
-                            const { best, avg, last } = hasEvents ? computeStreakMetrics(events) : { best: 0, avg: 0, last: 0 }
-                            return { nick, familia, kills, deaths, best, avg, last, events, hasEvents }
-                          })
-
-                          // Ordena por melhor streak
-                          rows.sort((a, b) => b.best - a.best || b.kills - a.kills)
-
-                          return (
-                            <StreakTable
-                              rows={rows}
-                              opponentFamilyByKey={opponentFamilyByKey}
-                              opponentFamilyByNick={opponentFamilyByNick}
-                              opponentClassByKey={opponentClassByKey}
-                              opponentClassByNick={opponentClassByNick}
-                            />
-                          )
-                        })()}
-                      </TabsContent>
-
                       <TabsContent value="jogadores" className="mt-4 space-y-4">
                         <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                           <div>
@@ -2013,7 +1980,29 @@ export function HistoryPage() {
                         {(() => {
                           const statsGuild = processedData.playerStatsByGuild || processedData.player_stats_by_guild || {}
                           const wantedGuilds = selectedGuildView === 'all' ? guilds : [selectedGuildView]
-                          const rows: Array<{nick:string; familia:string; guilda:string; classe:string; kills:number; deaths:number; kd:number; killsC:number; deathsC:number; kdC:number}> = []
+                          const opponentFamilyByKey: Record<string, string> = {}
+                          const opponentFamilyByNick: Record<string, string> = {}
+                          const opponentClassByKey: Record<string, string> = {}
+                          const opponentClassByNick: Record<string, string> = {}
+
+                          try {
+                            for (const [gName, byNick] of Object.entries(statsGuild as any)) {
+                              for (const [nick, st] of Object.entries((byNick as any) || {})) {
+                                const fam = String((st as any)?.familia || '').trim()
+                                const cls = String((st as any)?.classe || '').trim()
+                                if (fam) {
+                                  opponentFamilyByKey[`${gName}::${nick}`] = fam
+                                  if (!opponentFamilyByNick[nick]) opponentFamilyByNick[nick] = fam
+                                }
+                                if (cls) {
+                                  opponentClassByKey[`${gName}::${nick}`] = cls
+                                  if (!opponentClassByNick[nick]) opponentClassByNick[nick] = cls
+                                }
+                              }
+                            }
+                          } catch {}
+
+                          const rows: Array<{nick:string; familia:string; guilda:string; classe:string; kills:number; deaths:number; kd:number; killsC:number; deathsC:number; kdC:number; events: Array<{ t?: number; type: 'kill' | 'death'; opponentNick?: string; opponentGuild?: string }>}> = []
                           for (const g of wantedGuilds) {
                             const byNick = (statsGuild as any)[g] || {}
                             for (const [nick, st] of Object.entries(byNick)) {
@@ -2024,7 +2013,8 @@ export function HistoryPage() {
                               const deathsC = (st as any).deaths_vs_chernobyl || 0
                               const kd = deaths>0? kills/deaths : (kills>0? Infinity:0)
                               const kdC = deathsC>0? killsC/deathsC : (killsC>0? Infinity:0)
-                              rows.push({ nick, familia: (st as any).familia || '', guilda: g, classe, kills, deaths, kd, killsC, deathsC, kdC })
+                              const events = Array.isArray((st as any).events) ? ((st as any).events as Array<{ t?: number; type: 'kill' | 'death'; opponentNick?: string; opponentGuild?: string }>) : []
+                              rows.push({ nick, familia: (st as any).familia || '', guilda: g, classe, kills, deaths, kd, killsC, deathsC, kdC, events })
                             }
                           }
                           const filtered = rows.filter(r =>
@@ -2075,6 +2065,7 @@ export function HistoryPage() {
                                         <th className="text-center p-2 text-neutral-300 cursor-pointer select-none" onClick={()=>handleSortClick('kdC','desc')}>K/D vs Chernobyl {renderSortIcon('kdC')}</th>
                                       </>
                                     )}
+                                    <th className="text-center p-2 text-neutral-300">Detalhes</th>
                                   </tr>
                                 </thead>
                                 <tbody>
@@ -2094,6 +2085,23 @@ export function HistoryPage() {
                                           <td className="p-2 text-center font-semibold">{r.kdC===Infinity? '∞' : r.kdC.toFixed(2)}</td>
                                         </>
                                       )}
+                                      <td className="p-2 text-center">
+                                        <button
+                                          className={`px-2 py-1 rounded border text-xs ${r.events.length ? 'border-neutral-600 text-neutral-300 hover:bg-neutral-700' : 'border-neutral-800 text-neutral-500 cursor-not-allowed'}`}
+                                          disabled={!r.events.length}
+                                          onClick={() => setPlayerDetailModal({
+                                            nick: r.nick,
+                                            familia: r.familia,
+                                            events: r.events,
+                                            opponentFamilyByKey,
+                                            opponentFamilyByNick,
+                                            opponentClassByKey,
+                                            opponentClassByNick,
+                                          })}
+                                        >
+                                          {r.events.length ? 'Abrir' : 'Sem eventos'}
+                                        </button>
+                                      </td>
                                     </tr>
                                   ))}
                                 </tbody>
@@ -2101,6 +2109,22 @@ export function HistoryPage() {
                             </div>
                           )
                         })()}
+
+                        {playerDetailModal && (
+                          <PlayerStreakModal
+                            open={!!playerDetailModal}
+                            onOpenChange={(v) => {
+                              if (!v) setPlayerDetailModal(null)
+                            }}
+                            nick={playerDetailModal.nick}
+                            familia={playerDetailModal.familia}
+                            events={playerDetailModal.events}
+                            opponentFamilyByKey={playerDetailModal.opponentFamilyByKey}
+                            opponentFamilyByNick={playerDetailModal.opponentFamilyByNick}
+                            opponentClassByKey={playerDetailModal.opponentClassByKey}
+                            opponentClassByNick={playerDetailModal.opponentClassByNick}
+                          />
+                        )}
                       </TabsContent>
 
                       <TabsContent value="matriz" className="mt-4">
