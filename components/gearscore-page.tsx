@@ -384,9 +384,9 @@ export function GearscorePageComponent() {
 
   const formatRelativeTime = (dateString: string) => {
     if (!dateString) return 'N/A'
-    const now = new Date().getTime()
-    const ts = new Date(dateString).getTime()
+    const ts = Date.parse(dateString)
     if (isNaN(ts)) return 'N/A'
+    const now = Date.now()
     const diffMs = now - ts
     const sec = Math.floor(diffMs / 1000)
     if (sec < 60) return 'agora'

@@ -85,14 +85,20 @@ export async function processLogFile(
     
   } catch (error) {
     console.warn('Parser real falhou, usando dados mock:', error)
-    
-    // Fallback para dados mock
-    return await processLogFileMock(file, territorio, node, guildasAdversarias)
+
+    // Fallback para dados mock, mas mantendo `playerStatsByGuild` vazio para evitar regressão do Streak
+    return await processLogFileMock(file, territorio, node, guildasAdversarias, false)
   }
 }
 
 // Função mock como fallback
-async function processLogFileMock(file: File, territorio: 'Calpheon' | 'Kamasylvia' | 'Siege', node: string, guildasAdversarias: string[]): Promise<ProcessedLog> {
+async function processLogFileMock(
+  file: File,
+  territorio: 'Calpheon' | 'Kamasylvia' | 'Siege',
+  node: string,
+  guildasAdversarias: string[],
+  includePlayerStatsByGuild = true,
+): Promise<ProcessedLog> {
   // Simulate processing delay
   await new Promise((resolve) => setTimeout(resolve, 2000))
 

@@ -11,10 +11,12 @@ import { Badge } from "@/components/ui/badge"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
 import { getRealHistory, getMockHistory, type ProcessedLog } from "@/lib/mock-data"
+import { getProcessLogById } from "@/lib/supabase"
 import { CollapsibleClassItem } from "@/components/shared/collapsible-class-item"
 import { GuildFilterChips } from "@/components/shared/guild-filter-chips"
 import { StatsCard } from "@/components/shared/stats-card"
 import { getGuildBadgeClasses } from "@/lib/guild-colors"
+import { PlayerStreakModal, StreakTable } from "@/components/shared/player-streak-modal"
 import { isValidForStats } from "@/lib/player-filters"
 import {
   FileTextIcon,
@@ -89,6 +91,7 @@ export function HistoryPage() {
   const [chernSearch, setChernSearch] = useState("")
   const [chernClassFilter, setChernClassFilter] = useState<string>('all')
   const [chernSortBy, setChernSortBy] = useState<'presence' | 'kd' | 'name'>('presence')
+  // Backfill removido
 
   // Formata data em relativo (hoje, há 1 dia, há N dias)
   const formatRelativeDay = (dateInput: string): string => {
@@ -1709,7 +1712,7 @@ export function HistoryPage() {
                           <p className="text-sm text-neutral-400 mt-1">Arquivo: {record.arquivo_nome}</p>
                         )}
                       </div>
-                      <div className="flex items-center gap-1">
+                      <div className="flex items-center gap-2">
                         <Button variant="ghost" size="sm" onClick={() => copyShareLink(record.id)} title="Compartilhar">
                           <Link2Icon className="h-5 w-5" />
                         </Button>
@@ -1728,6 +1731,7 @@ export function HistoryPage() {
                         <TabsTrigger value="gs-lollipop">GS Lollipop</TabsTrigger>
                         <TabsTrigger value="gs-chernobyl">GS Chernobyl</TabsTrigger>
                         <TabsTrigger value="tempo-pino">Tempo de Pino</TabsTrigger>
+                        <TabsTrigger value="streak">Streak</TabsTrigger>
                       </TabsList>
 
                       <TabsContent value="resumo" className="space-y-6 mt-4">
@@ -1857,6 +1861,89 @@ export function HistoryPage() {
                               .filter(Boolean)}
                           </div>
                         </div>
+                      </TabsContent>
+
+                      <TabsContent value="streak" className="mt-4 space-y-4">
+                        {(() => {
+                          const statsGuild = (processedData.playerStatsByGuild || processedData.player_stats_by_guild || {}) as any
+                          const lollipop = (statsGuild['Lollipop'] || {}) as Record<string, any>
+
+                          // Mapa auxiliar para exibir família do oponente
+                          const opponentFamilyByKey: Record<string, string> = {}
+                          const opponentFamilyByNick: Record<string, string> = {}
+                          const opponentClassByKey: Record<string, string> = {}
+                          const opponentClassByNick: Record<string, string> = {}
+                          try {
+                            // Preenche a partir de todas as guildas conhecidas no registro
+                            for (const [gName, byNick] of Object.entries(statsGuild as any)) {
+                              for (const [n, st] of Object.entries((byNick as any) || {})) {
+                                const fam = String((st as any)?.familia || '').trim()
+                                const cls = String((st as any)?.classe || '').trim()
+                                if (fam) {
+                                  opponentFamilyByKey[`${gName}::${n}`] = fam
+                                  if (!opponentFamilyByNick[n]) opponentFamilyByNick[n] = fam
+                                }
+                                if (cls) {
+                                  opponentClassByKey[`${gName}::${n}`] = cls
+                                  if (!opponentClassByNick[n]) opponentClassByNick[n] = cls
+                                }
+                              }
+                            }
+                          } catch {}
+
+                          // Extrai eventos quando disponíveis e calcula streaks
+                          type Event = { t?: number; type: 'kill' | 'death'; opponentNick?: string; opponentGuild?: string }
+
+                          function computeStreakMetrics(events: Event[]) {
+                            if (!events || events.length === 0) {
+                              return { best: 0, avg: 0, last: 0, streaks: [] as number[] }
+                            }
+                            const ordered = [...events].sort((a, b) => {
+                              const ta = (a as any).tick ?? a.t ?? 0
+                              const tb = (b as any).tick ?? b.t ?? 0
+                              return ta - tb
+                            })
+                            const streaks: number[] = []
+                            let cur = 0
+                            for (const ev of ordered) {
+                              if (ev.type === 'kill') {
+                                cur += 1
+                              } else if (ev.type === 'death') {
+                                if (cur > 0) streaks.push(cur)
+                                cur = 0
+                              }
+                            }
+                            // Caso termine sem morte
+                            if (cur > 0) streaks.push(cur)
+                            const best = streaks.length ? Math.max(...streaks) : 0
+                            const avg = streaks.length ? (streaks.reduce((a, b) => a + b, 0) / streaks.length) : 0
+                            const last = streaks.length ? streaks[streaks.length - 1] : 0
+                            return { best, avg, last, streaks }
+                          }
+
+                          const rows = Object.entries(lollipop).map(([nick, st]) => {
+                            const familia = (st as any).familia || ''
+                            const kills = Number((st as any).kills || 0)
+                            const deaths = Number((st as any).deaths || 0)
+                            const events = Array.isArray((st as any).events) ? (st as any).events as Event[] : []
+                            const hasEvents = events.length > 0
+                            const { best, avg, last } = hasEvents ? computeStreakMetrics(events) : { best: 0, avg: 0, last: 0 }
+                            return { nick, familia, kills, deaths, best, avg, last, events, hasEvents }
+                          })
+
+                          // Ordena por melhor streak
+                          rows.sort((a, b) => b.best - a.best || b.kills - a.kills)
+
+                          return (
+                            <StreakTable
+                              rows={rows}
+                              opponentFamilyByKey={opponentFamilyByKey}
+                              opponentFamilyByNick={opponentFamilyByNick}
+                              opponentClassByKey={opponentClassByKey}
+                              opponentClassByNick={opponentClassByNick}
+                            />
+                          )
+                        })()}
                       </TabsContent>
 
                       <TabsContent value="jogadores" className="mt-4 space-y-4">

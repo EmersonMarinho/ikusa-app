@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { isValidForStats, computeGearscore } from '@/lib/player-filters'
+import { fetchExternalPlayers } from '@/lib/gearscore-external'
 
 // Configuração do Supabase
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
@@ -107,6 +108,86 @@ export async function GET(request: NextRequest) {
     // Carrega famílias válidas da aliança
     const allianceFamilies = await getAllianceFamiliesSet()
 
+    // 0) Tenta buscar de DB externo (MySQL) com cache TTL
+    const externalPlayers = await fetchExternalPlayers(false)
+    if (externalPlayers.length > 0) {
+      console.log(`✅ players-gearscore: usando MySQL externo (${externalPlayers.length} registros)`) 
+      // Aplica filtro de aliança e ordenação/limite
+      const filtered = externalPlayers
+        .filter(p => p.gearscore > 0)
+        .filter(p => {
+          if (skipAllianceFilter) return true
+          if (allianceFamilies.size === 0) return true
+          return allianceFamilies.has(normalizeFamilia(p.family_name))
+        })
+
+      const validSortFields = ['gearscore', 'family_name', 'main_class', 'ap', 'aap', 'dp'] as const
+      const s = validSortFields.includes(sortBy as any) ? (sortBy as any) : 'gearscore'
+      filtered.sort((a: any, b: any) => {
+        const av = a[s]
+        const bv = b[s]
+        if (typeof av === 'string' && typeof bv === 'string') {
+          return order === 'asc' ? av.localeCompare(bv) : bv.localeCompare(av)
+        }
+        return order === 'asc' ? Number(av) - Number(bv) : Number(bv) - Number(av)
+      })
+
+      const limited = limit === 0 ? filtered : filtered.slice(0, Math.min(limit, 100))
+
+      // Estatísticas usando os válidos para stats
+      const playersForStats = limited.filter(player =>
+        isValidForStats({
+          familyName: player.family_name,
+          characterName: player.character_name,
+          mainClass: player.main_class,
+        })
+      )
+      const totalPlayers = playersForStats.length
+      const totalGearscore = playersForStats.reduce((sum, player) => sum + Number(player.gearscore || 0), 0)
+      const averageGearscore = totalPlayers > 0 ? Math.round(totalGearscore / totalPlayers) : 0
+      const topPlayers = playersForStats.slice(0, 10)
+      const classDistribution: Record<string, number> = {}
+      playersForStats.forEach(player => {
+        classDistribution[player.main_class] = (classDistribution[player.main_class] || 0) + 1
+      })
+      const gearscoreRanges = { '751-800': 0, '801-850': 0, '851-900': 0 }
+      playersForStats.forEach(player => {
+        const gs = Number(player.gearscore || 0)
+        if (gs >= 751 && gs <= 800) gearscoreRanges['751-800']++
+        else if (gs >= 801 && gs <= 850) gearscoreRanges['801-850']++
+        else if (gs >= 851 && gs <= 900) gearscoreRanges['851-900']++
+      })
+
+      const guildStats: GuildStats = {
+        total_players: totalPlayers,
+        average_gearscore: averageGearscore,
+        top_players: topPlayers as any,
+        class_distribution: classDistribution,
+        gearscore_ranges: gearscoreRanges
+      }
+
+      return NextResponse.json({
+        success: true,
+        data: {
+          players: limited.map(player => ({
+            ...player,
+            last_updated: player.last_updated || new Date().toISOString(),
+          })) as any,
+          stats: guildStats,
+          source: 'mysql',
+          query: {
+            guild,
+            limit,
+            sortBy,
+            order,
+            includeHistory,
+            userId
+          }
+        }
+      })
+    }
+
+    // 1) Fallback: busca no Supabase (caminho existente)
     // Busca players com gearscore mais recente
     let query = supabase
       .from('players')
@@ -320,6 +401,7 @@ export async function GET(request: NextRequest) {
       data: {
         players: limitedPlayers,
         stats: guildStats,
+        source: 'supabase',
         history: includeHistory ? history : undefined,
         query: {
           guild,

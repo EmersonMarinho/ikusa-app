@@ -264,7 +264,10 @@ export async function POST(request: NextRequest) {
     
     // Processa cada linha do log para contar kills e deaths INDIVIDUAIS
     const lines = logText.split('\n');
-    
+    // Eventos por jogador (para cálculo de streaks)
+    const playerEvents: Record<string, Array<{ t?: number; tick?: number; type: 'kill' | 'death'; opponentNick?: string; opponentGuild?: string }>> = {};
+    let lastKnownTick: number | null = null;
+
     for (const line of lines) {
       // Padrão: [Killer] has killed [Victim] from [VictimGuild]
       const killMatch = line.match(/\] (.+?) has killed (.+?) from (.+?) /i);
@@ -272,7 +275,7 @@ export async function POST(request: NextRequest) {
         const killerNick = killMatch[1]?.trim() || '';
         const victimNick = killMatch[2]?.trim() || '';
         const victimGuild = killMatch[3]?.trim() || '';
-        
+
         // Determina a guilda do killer (procura em todas as guildas)
         let killerGuild = '';
         for (const guild of guilds) {
@@ -281,11 +284,23 @@ export async function POST(request: NextRequest) {
             break;
           }
         }
-        
+
         if (killerGuild && victimGuild) {
           // Atualiza estatísticas individuais
           if (playerStatsByGuild[killerGuild]?.[killerNick]) {
             playerStatsByGuild[killerGuild][killerNick].kills++;
+            // Evento para o killer
+            try {
+              const tm = line.match(/^\[(\d{2}):(\d{2}):(\d{2})\]/);
+              const tParsed = tm ? (Number(tm[1]) * 3600 + Number(tm[2]) * 60 + Number(tm[3])) : undefined;
+              const tickMatch = line.match(/Next war tick:\s*(\d+)/i) || line.match(/Node Time:\s*(\d+)/i) || line.match(/PID:\s*(\d+)/i);
+              if (tickMatch) {
+                const maybe = parseInt(tickMatch[1], 10);
+                if (Number.isFinite(maybe)) lastKnownTick = maybe;
+              }
+              const tick = lastKnownTick ?? tParsed;
+              (playerEvents[killerNick] ||= []).push({ t: tParsed, tick, type: 'kill', opponentNick: victimNick, opponentGuild: victimGuild });
+            } catch {}
             if ((victimGuild || '').toLowerCase() === 'chernobyl') {
               playerStatsByGuild[killerGuild][killerNick].kills_vs_chernobyl++;
             } else {
@@ -294,6 +309,18 @@ export async function POST(request: NextRequest) {
           }
           if (playerStatsByGuild[victimGuild]?.[victimNick]) {
             playerStatsByGuild[victimGuild][victimNick].deaths++;
+            // Evento para a vítima
+            try {
+              const tm = line.match(/^\[(\d{2}):(\d{2}):(\d{2})\]/);
+              const tParsed = tm ? (Number(tm[1]) * 3600 + Number(tm[2]) * 60 + Number(tm[3])) : undefined;
+              const tickMatch = line.match(/Next war tick:\s*(\d+)/i) || line.match(/Node Time:\s*(\d+)/i) || line.match(/PID:\s*(\d+)/i);
+              if (tickMatch) {
+                const maybe = parseInt(tickMatch[1], 10);
+                if (Number.isFinite(maybe)) lastKnownTick = maybe;
+              }
+              const tick = lastKnownTick ?? tParsed;
+              (playerEvents[victimNick] ||= []).push({ t: tParsed, tick, type: 'death', opponentNick: killerNick, opponentGuild: killerGuild });
+            } catch {}
             // Se quem matou foi Chernobyl, a morte é vs Chernobyl; caso contrário, vs outros
             if ((killerGuild || '').toLowerCase() === 'chernobyl') {
               playerStatsByGuild[victimGuild][victimNick].deaths_vs_chernobyl++;
@@ -301,24 +328,24 @@ export async function POST(request: NextRequest) {
               playerStatsByGuild[victimGuild][victimNick].deaths_vs_others++;
             }
           }
-          
+
           // Atualiza totais por guilda
           killsByGuild[killerGuild]++;
           deathsByGuild[victimGuild]++;
-          
+
           // Atualiza matriz de kills
           if (!killsMatrix[killerGuild]) killsMatrix[killerGuild] = {};
           killsMatrix[killerGuild][victimGuild] = (killsMatrix[killerGuild][victimGuild] || 0) + 1;
         }
       }
-      
+
       // Padrão: [Victim] died to [Killer] from [KillerGuild]
       const deathMatch = line.match(/\] (.+?) died to (.+?) from (.+?) /i);
       if (deathMatch) {
         const victimNick = deathMatch[1]?.trim() || '';
         const killerNick = deathMatch[2]?.trim() || '';
         const killerGuild = deathMatch[3]?.trim() || '';
-        
+
         // Determina a guilda da vítima (procura em todas as guildas)
         let victimGuild = '';
         for (const guild of guilds) {
@@ -327,11 +354,23 @@ export async function POST(request: NextRequest) {
             break;
           }
         }
-        
+
         if (killerGuild && victimGuild) {
           // Atualiza estatísticas individuais
           if (playerStatsByGuild[killerGuild]?.[killerNick]) {
             playerStatsByGuild[killerGuild][killerNick].kills++;
+            // Evento para o killer
+            try {
+              const tm = line.match(/^\[(\d{2}):(\d{2}):(\d{2})\]/);
+              const tParsed = tm ? (Number(tm[1]) * 3600 + Number(tm[2]) * 60 + Number(tm[3])) : undefined;
+              const tickMatch = line.match(/Next war tick:\s*(\d+)/i) || line.match(/Node Time:\s*(\d+)/i) || line.match(/PID:\s*(\d+)/i);
+              if (tickMatch) {
+                const maybe = parseInt(tickMatch[1], 10);
+                if (Number.isFinite(maybe)) lastKnownTick = maybe;
+              }
+              const tick = lastKnownTick ?? tParsed;
+              (playerEvents[killerNick] ||= []).push({ t: tParsed, tick, type: 'kill', opponentNick: victimNick, opponentGuild: victimGuild });
+            } catch {}
             // Killer guild conhecido; se vítima é Lollipop, isso não muda vs Chernobyl diretamente
             if ((victimGuild || '').toLowerCase() === 'chernobyl') {
               playerStatsByGuild[killerGuild][killerNick].kills_vs_chernobyl++;
@@ -341,24 +380,36 @@ export async function POST(request: NextRequest) {
           }
           if (playerStatsByGuild[victimGuild]?.[victimNick]) {
             playerStatsByGuild[victimGuild][victimNick].deaths++;
+            // Evento para a vítima
+            try {
+              const tm = line.match(/^\[(\d{2}):(\d{2}):(\d{2})\]/);
+              const tParsed = tm ? (Number(tm[1]) * 3600 + Number(tm[2]) * 60 + Number(tm[3])) : undefined;
+              const tickMatch = line.match(/Next war tick:\s*(\d+)/i) || line.match(/Node Time:\s*(\d+)/i) || line.match(/PID:\s*(\d+)/i);
+              if (tickMatch) {
+                const maybe = parseInt(tickMatch[1], 10);
+                if (Number.isFinite(maybe)) lastKnownTick = maybe;
+              }
+              const tick = lastKnownTick ?? tParsed;
+              (playerEvents[victimNick] ||= []).push({ t: tParsed, tick, type: 'death', opponentNick: killerNick, opponentGuild: killerGuild });
+            } catch {}
             if ((killerGuild || '').toLowerCase() === 'chernobyl') {
               playerStatsByGuild[victimGuild][victimNick].deaths_vs_chernobyl++;
             } else {
               playerStatsByGuild[victimGuild][victimNick].deaths_vs_others++;
             }
           }
-          
+
           // Atualiza totais por guilda
           killsByGuild[killerGuild]++;
           deathsByGuild[victimGuild]++;
-          
+
           // Atualiza matriz de kills
           if (!killsMatrix[killerGuild]) killsMatrix[killerGuild] = {};
           killsMatrix[killerGuild][victimGuild] = (killsMatrix[killerGuild][victimGuild] || 0) + 1;
         }
       }
     }
-    
+
     // Preenche classes e famílias para cada jogador
     for (const guild of guilds) {
       for (const nick of guildToNicks[guild]) {
@@ -367,6 +418,11 @@ export async function POST(request: NextRequest) {
           const { classe, familia } = await getClassAndFamilyForNick(nick);
           playerStatsByGuild[guild][nick].classe = classe;
           playerStatsByGuild[guild][nick].familia = familia;
+          // Anexa eventos (se houver)
+          const ev = playerEvents[nick];
+          if (ev && ev.length) {
+            (playerStatsByGuild as any)[guild][nick].events = ev;
+          }
         }
       }
     }
