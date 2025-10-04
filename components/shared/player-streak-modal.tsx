@@ -39,7 +39,7 @@ const normalizeClassName = (raw?: string): string => {
     .replace(/[^a-z]/g, "")
 }
 
-type Event = { t?: number; type: "kill" | "death"; opponentNick?: string; opponentGuild?: string }
+type Event = { t?: number; time?: string; type: "kill" | "death"; opponentNick?: string; opponentGuild?: string }
 
 export function PlayerStreakModal({
   open,
@@ -183,6 +183,7 @@ export function PlayerStreakModal({
                         {ev.type === "kill" ? "Matou" : "Morreu para"} {displayName}
                         {cls ? <span className="text-neutral-400"> — {cls}</span> : null}
                         {ev.opponentGuild ? <span className="text-neutral-400"> de {ev.opponentGuild}</span> : null}
+                        {ev.time ? <span className="text-neutral-500 ml-2 text-xs">({ev.time})</span> : null}
                       </div>
                       <Badge
                         variant="outline"

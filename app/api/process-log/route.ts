@@ -265,7 +265,7 @@ export async function POST(request: NextRequest) {
     // Processa cada linha do log para contar kills e deaths INDIVIDUAIS
     const lines = logText.split('\n');
     // Eventos por jogador (para cálculo de streaks)
-    const playerEvents: Record<string, Array<{ t?: number; tick?: number; type: 'kill' | 'death'; opponentNick?: string; opponentGuild?: string }>> = {};
+    const playerEvents: Record<string, Array<{ t?: number; tick?: number; time?: string; type: 'kill' | 'death'; opponentNick?: string; opponentGuild?: string }>> = {};
     let lastKnownTick: number | null = null;
 
     for (const line of lines) {
@@ -291,15 +291,16 @@ export async function POST(request: NextRequest) {
             playerStatsByGuild[killerGuild][killerNick].kills++;
             // Evento para o killer
             try {
-              const tm = line.match(/^\[(\d{2}):(\d{2}):(\d{2})\]/);
-              const tParsed = tm ? (Number(tm[1]) * 3600 + Number(tm[2]) * 60 + Number(tm[3])) : undefined;
+            const tm = line.match(/^\[(\d{2}):(\d{2}):(\d{2})\]/);
+            const tParsed = tm ? (Number(tm[1]) * 3600 + Number(tm[2]) * 60 + Number(tm[3])) : undefined;
+            const tFormatted = tm ? `${tm[1]}:${tm[2]}:${tm[3]}` : undefined;
               const tickMatch = line.match(/Next war tick:\s*(\d+)/i) || line.match(/Node Time:\s*(\d+)/i) || line.match(/PID:\s*(\d+)/i);
               if (tickMatch) {
                 const maybe = parseInt(tickMatch[1], 10);
                 if (Number.isFinite(maybe)) lastKnownTick = maybe;
               }
               const tick = lastKnownTick ?? tParsed;
-              (playerEvents[killerNick] ||= []).push({ t: tParsed, tick, type: 'kill', opponentNick: victimNick, opponentGuild: victimGuild });
+            (playerEvents[killerNick] ||= []).push({ t: tParsed, tick, time: tFormatted, type: 'kill', opponentNick: victimNick, opponentGuild: victimGuild });
             } catch {}
             if ((victimGuild || '').toLowerCase() === 'chernobyl') {
               playerStatsByGuild[killerGuild][killerNick].kills_vs_chernobyl++;
@@ -311,15 +312,16 @@ export async function POST(request: NextRequest) {
             playerStatsByGuild[victimGuild][victimNick].deaths++;
             // Evento para a vítima
             try {
-              const tm = line.match(/^\[(\d{2}):(\d{2}):(\d{2})\]/);
-              const tParsed = tm ? (Number(tm[1]) * 3600 + Number(tm[2]) * 60 + Number(tm[3])) : undefined;
+            const tm = line.match(/^\[(\d{2}):(\d{2}):(\d{2})\]/);
+            const tParsed = tm ? (Number(tm[1]) * 3600 + Number(tm[2]) * 60 + Number(tm[3])) : undefined;
+            const tFormatted = tm ? `${tm[1]}:${tm[2]}:${tm[3]}` : undefined;
               const tickMatch = line.match(/Next war tick:\s*(\d+)/i) || line.match(/Node Time:\s*(\d+)/i) || line.match(/PID:\s*(\d+)/i);
               if (tickMatch) {
                 const maybe = parseInt(tickMatch[1], 10);
                 if (Number.isFinite(maybe)) lastKnownTick = maybe;
               }
               const tick = lastKnownTick ?? tParsed;
-              (playerEvents[victimNick] ||= []).push({ t: tParsed, tick, type: 'death', opponentNick: killerNick, opponentGuild: killerGuild });
+            (playerEvents[victimNick] ||= []).push({ t: tParsed, tick, time: tFormatted, type: 'death', opponentNick: killerNick, opponentGuild: killerGuild });
             } catch {}
             // Se quem matou foi Chernobyl, a morte é vs Chernobyl; caso contrário, vs outros
             if ((killerGuild || '').toLowerCase() === 'chernobyl') {
@@ -361,15 +363,16 @@ export async function POST(request: NextRequest) {
             playerStatsByGuild[killerGuild][killerNick].kills++;
             // Evento para o killer
             try {
-              const tm = line.match(/^\[(\d{2}):(\d{2}):(\d{2})\]/);
-              const tParsed = tm ? (Number(tm[1]) * 3600 + Number(tm[2]) * 60 + Number(tm[3])) : undefined;
+            const tm = line.match(/^\[(\d{2}):(\d{2}):(\d{2})\]/);
+            const tParsed = tm ? (Number(tm[1]) * 3600 + Number(tm[2]) * 60 + Number(tm[3])) : undefined;
+            const tFormatted = tm ? `${tm[1]}:${tm[2]}:${tm[3]}` : undefined;
               const tickMatch = line.match(/Next war tick:\s*(\d+)/i) || line.match(/Node Time:\s*(\d+)/i) || line.match(/PID:\s*(\d+)/i);
               if (tickMatch) {
                 const maybe = parseInt(tickMatch[1], 10);
                 if (Number.isFinite(maybe)) lastKnownTick = maybe;
               }
               const tick = lastKnownTick ?? tParsed;
-              (playerEvents[killerNick] ||= []).push({ t: tParsed, tick, type: 'kill', opponentNick: victimNick, opponentGuild: victimGuild });
+            (playerEvents[killerNick] ||= []).push({ t: tParsed, tick, time: tFormatted, type: 'kill', opponentNick: victimNick, opponentGuild: victimGuild });
             } catch {}
             // Killer guild conhecido; se vítima é Lollipop, isso não muda vs Chernobyl diretamente
             if ((victimGuild || '').toLowerCase() === 'chernobyl') {
@@ -382,15 +385,16 @@ export async function POST(request: NextRequest) {
             playerStatsByGuild[victimGuild][victimNick].deaths++;
             // Evento para a vítima
             try {
-              const tm = line.match(/^\[(\d{2}):(\d{2}):(\d{2})\]/);
-              const tParsed = tm ? (Number(tm[1]) * 3600 + Number(tm[2]) * 60 + Number(tm[3])) : undefined;
+            const tm = line.match(/^\[(\d{2}):(\d{2}):(\d{2})\]/);
+            const tParsed = tm ? (Number(tm[1]) * 3600 + Number(tm[2]) * 60 + Number(tm[3])) : undefined;
+            const tFormatted = tm ? `${tm[1]}:${tm[2]}:${tm[3]}` : undefined;
               const tickMatch = line.match(/Next war tick:\s*(\d+)/i) || line.match(/Node Time:\s*(\d+)/i) || line.match(/PID:\s*(\d+)/i);
               if (tickMatch) {
                 const maybe = parseInt(tickMatch[1], 10);
                 if (Number.isFinite(maybe)) lastKnownTick = maybe;
               }
               const tick = lastKnownTick ?? tParsed;
-              (playerEvents[victimNick] ||= []).push({ t: tParsed, tick, type: 'death', opponentNick: killerNick, opponentGuild: killerGuild });
+            (playerEvents[victimNick] ||= []).push({ t: tParsed, tick, time: tFormatted, type: 'death', opponentNick: killerNick, opponentGuild: killerGuild });
             } catch {}
             if ((killerGuild || '').toLowerCase() === 'chernobyl') {
               playerStatsByGuild[victimGuild][victimNick].deaths_vs_chernobyl++;

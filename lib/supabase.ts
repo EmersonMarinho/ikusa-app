@@ -15,15 +15,16 @@ export interface ProcessLogRecord {
   total_por_classe: Array<{ classe: string; count: number }>
   classes: Record<string, Array<{ nick: string; familia: string }>>
   classes_by_guild: Record<string, Record<string, Array<{ nick: string; familia: string }>>> | null
-  player_stats_by_guild?: Record<string, Record<string, { 
-    kills: number; 
-    deaths: number; 
-    classe: string; 
+  player_stats_by_guild?: Record<string, Record<string, {
+    kills: number;
+    deaths: number;
+    classe: string;
     familia: string;
     kills_vs_chernobyl?: number;
     deaths_vs_chernobyl?: number;
     kills_vs_others?: number;
     deaths_vs_others?: number;
+    events?: Array<{ t?: number; tick?: number; time?: string; type: 'kill' | 'death'; opponentNick?: string; opponentGuild?: string }>;
   }>> | null
   kills_by_guild: Record<string, number> | null
   deaths_by_guild: Record<string, number> | null
